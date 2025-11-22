@@ -1,0 +1,26 @@
+meta {
+  name: query users
+  type: http
+  seq: 5
+}
+
+post {
+  url: http://localhost:8081/v0/users
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "filter": {
+      "type": "gte",
+      "column": "id",
+      "value": "3"
+    }
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

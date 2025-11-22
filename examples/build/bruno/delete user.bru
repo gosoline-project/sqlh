@@ -1,0 +1,26 @@
+meta {
+  name: delete user
+  type: http
+  seq: 6
+}
+
+delete {
+  url: http://localhost:8081/v0/user/:id
+  body: none
+  auth: inherit
+}
+
+params:path {
+  id: 3
+}
+
+body:json {
+  {
+    "name": "Karl"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
