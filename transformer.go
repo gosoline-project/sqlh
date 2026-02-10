@@ -22,5 +22,5 @@ type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] int
 }
 
 type TransformerOutput[K sqlr.KeyTypes, E sqlr.Entitier[K], O any] interface {
-	TransformOutput(ctx context.Context, entity *E) (O, error)
+	TransformOutput(ctx context.Context, entity *E) (*O, error)
 }

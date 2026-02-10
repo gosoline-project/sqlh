@@ -151,7 +151,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) outSingle(ctx context.Context, entity *E)
 	var ok bool
 	var err error
 	var outTransformer TransformerOutput[K, E, O]
-	var out O
+	var out *O
 
 	if outTransformer, ok = h.transformer.(TransformerOutput[K, E, O]); !ok {
 		return httpserver.NewJsonResponse(entity), nil
@@ -172,7 +172,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) outMultiple(ctx context.Context, entities
 		return httpserver.NewJsonResponse(entities), nil
 	}
 
-	outs := make([]O, len(entities))
+	outs := make([]*O, len(entities))
 
 	for idx, entity := range entities {
 		if outs[idx], err = outTransformer.TransformOutput(ctx, &entity); err != nil {

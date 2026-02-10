@@ -17,6 +17,7 @@ func main() {
 	application.New(
 		application.WithConfigDebug,
 		application.WithConfigBytes(configDist, "yml"),
+		application.WithConfigFileFlag,
 		application.WithConfigEnvKeyReplacer(cfg.DefaultEnvKeyReplacer),
 		application.WithConfigSanitizers(cfg.TimeSanitizer),
 		application.WithLoggerHandlersFromConfig,
