@@ -15,27 +15,6 @@ import (
 	"github.com/spf13/cast"
 )
 
-type Bla interface {
-	GetId() int
-}
-
-type E struct {
-	id int
-}
-
-func (e *E) GetId() int {
-	return e.id
-}
-
-func Hust[T Bla](t T) {
-	fmt.Println(t.GetId())
-}
-
-func init() {
-	e := &E{id: 42}
-	Hust[*E](e)
-}
-
 type InputRead[K sqlr.KeyTypes] struct {
 	Id K `uri:"id"`
 }
@@ -44,8 +23,8 @@ type InputQuery[K sqlr.KeyTypes] struct {
 	Filter sqlc.JsonFilter `json:"filter"`
 }
 
-func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU]) httpserver.RegisterFactoryFunc {
-	return httpserver.With(NewHandlerCrud[K, E, IC, IU](transformerFactory), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU]) {
+func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU, O]) httpserver.RegisterFactoryFunc {
+	return httpserver.With(NewHandlerCrud[K, E, IC, IU, O](transformerFactory), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU, O]) {
 		path := fmt.Sprintf("/v%d/%s", version, entityName)
 		router.POST(path, httpserver.Bind(handler.HandleCreate))
 
@@ -71,11 +50,11 @@ func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](versi
 	})
 }
 
-func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformerFactory TransformerFactory[K, E, IC, IU]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU]] {
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*HandlerCrud[K, E, IC, IU], error) {
+func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](transformerFactory TransformerFactory[K, E, IC, IU, O]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU, O]] {
+	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*HandlerCrud[K, E, IC, IU, O], error) {
 		var err error
 		var repo sqlr.Repository[K, E]
-		var transformer Transformer[K, E, IC, IU]
+		var transformer Transformer[K, E, IC, IU, O]
 
 		if repo, err = sqlr.NewRepository[K, E](ctx, config, logger, "default"); err != nil {
 			return nil, fmt.Errorf("failed to create repository for handler: %w", err)
@@ -85,19 +64,19 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 			return nil, fmt.Errorf("failed to create transformer for handler: %w", err)
 		}
 
-		return &HandlerCrud[K, E, IC, IU]{
+		return &HandlerCrud[K, E, IC, IU, O]{
 			repo:        repo,
 			transformer: transformer,
 		}, nil
 	}
 }
 
-type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] struct {
+type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] struct {
 	repo        sqlr.Repository[K, E]
-	transformer Transformer[K, E, IC, IU]
+	transformer Transformer[K, E, IC, IU, O]
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) HandleCreate(ctx context.Context, input *IC) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleCreate(ctx context.Context, input *IC) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -109,10 +88,10 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleCreate(ctx context.Context, input *IC)
 		return nil, fmt.Errorf("failed to create entity: %w", err)
 	}
 
-	return h.out(ctx, entity)
+	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) HandleRead(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleRead(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -120,10 +99,10 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleRead(ctx context.Context, input *Input
 		return nil, fmt.Errorf("failed to read entity with id %q: %w", input.Id, err)
 	}
 
-	return h.out(ctx, entity)
+	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) HandleQuery(ctx context.Context, input *InputQuery[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleQuery(ctx context.Context, input *InputQuery[K]) (httpserver.Response, error) {
 	var err error
 	var entities []E
 	var expression *sqlc.Expression
@@ -139,10 +118,10 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleQuery(ctx context.Context, input *Inpu
 		return nil, fmt.Errorf("failed to query entities: %w", err)
 	}
 
-	return httpserver.NewJsonResponse(entities), nil
+	return h.outMultiple(ctx, entities)
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, input *IU) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleUpdate(ctx context.Context, id K, input *IU) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -158,10 +137,10 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 		return nil, fmt.Errorf("failed to update entity with id %q: %w", id, err)
 	}
 
-	return h.out(ctx, entity)
+	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) HandleDelete(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleDelete(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
 	if err := h.repo.Delete(ctx, input.Id); err != nil {
 		return nil, fmt.Errorf("failed to delete entity with id %q: %w", input.Id, err)
 	}
@@ -169,13 +148,13 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleDelete(ctx context.Context, input *Inp
 	return httpserver.NewStatusResponse(http.StatusOK), nil
 }
 
-func (h *HandlerCrud[K, E, IC, IU]) out(ctx context.Context, entity *E) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) outSingle(ctx context.Context, entity *E) (httpserver.Response, error) {
 	var ok bool
 	var err error
-	var outTransformer TransformerOutput[K, E]
+	var outTransformer TransformerOutput[K, E, O]
 	var out any
 
-	if outTransformer, ok = h.transformer.(TransformerOutput[K, E]); !ok {
+	if outTransformer, ok = h.transformer.(TransformerOutput[K, E, O]); !ok {
 		return httpserver.NewJsonResponse(entity), nil
 	}
 
@@ -184,4 +163,23 @@ func (h *HandlerCrud[K, E, IC, IU]) out(ctx context.Context, entity *E) (httpser
 	}
 
 	return httpserver.NewJsonResponse(out), nil
+}
+
+func (h *HandlerCrud[K, E, IC, IU, O]) outMultiple(ctx context.Context, entities []E) (httpserver.Response, error) {
+	var ok bool
+	var err error
+	var outTransformer TransformerOutput[K, E, O]
+	if outTransformer, ok = h.transformer.(TransformerOutput[K, E, O]); !ok {
+		return httpserver.NewJsonResponse(entities), nil
+	}
+
+	outs := make([]O, len(entities))
+
+	for idx, entity := range entities {
+		if outs[idx], err = outTransformer.TransformOutput(ctx, &entity); err != nil {
+			return nil, fmt.Errorf("failed to transform output: %w", err)
+		}
+	}
+
+	return httpserver.NewJsonResponse(outs), nil
 }
