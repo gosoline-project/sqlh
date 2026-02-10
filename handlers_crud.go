@@ -152,7 +152,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) outSingle(ctx context.Context, entity *E)
 	var ok bool
 	var err error
 	var outTransformer TransformerOutput[K, E, O]
-	var out any
+	var out O
 
 	if outTransformer, ok = h.transformer.(TransformerOutput[K, E, O]); !ok {
 		return httpserver.NewJsonResponse(entity), nil
