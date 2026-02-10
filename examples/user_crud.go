@@ -46,8 +46,8 @@ func (u UserTransformer) TransformUpdate(_ context.Context, user *User, input *U
 	return user, nil
 }
 
-func (u UserTransformer) TransformOutput(_ context.Context, user *User) (UserOutput, error) {
-	out := UserOutput{
+func (u UserTransformer) TransformOutput(_ context.Context, user *User) (*UserOutput, error) {
+	out := &UserOutput{
 		Id:        user.Id,
 		Name:      user.Name,
 		CreatedAt: user.CreatedAt,
