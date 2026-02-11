@@ -5,8 +5,8 @@ go 1.25.0
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/gosoline-project/httpserver v0.1.1-0.20260109134823-7aa2fb1e31bd
-	github.com/gosoline-project/sqlc v0.0.0-20260109132457-2b57a9f35d57
-	github.com/gosoline-project/sqlr v0.0.0-20260109134651-ae6baf770d19
+	github.com/gosoline-project/sqlc v0.0.0-20260210205335-5d74534ff059
+	github.com/gosoline-project/sqlr v0.0.0-20260211161831-b6530e5b4cb6
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.54.2
 	github.com/spf13/cast v1.10.0
