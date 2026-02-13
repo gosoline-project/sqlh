@@ -12,7 +12,7 @@ import (
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-type txKey struct {}
+type txKey struct{}
 
 func WithTx[H any](handlerFactory httpserver.HandlerFactory[H], register httpserver.RegisterFunc[H]) httpserver.RegisterFactoryFunc {
 	return func(ctx context.Context, config cfg.Config, logger log.Logger, router *httpserver.Router) (func(router *httpserver.Router), error) {
@@ -21,7 +21,7 @@ func WithTx[H any](handlerFactory httpserver.HandlerFactory[H], register httpser
 		var handler *H
 
 		if sqlClient, err = sqlc.ProvideClient(ctx, config, logger, "default"); err != nil {
-			return nil, fmt.Errorf("could not create sqlg client: %w", err)
+			return nil, fmt.Errorf("could not create sqlc client: %w", err)
 		}
 
 		if handler, err = handlerFactory(ctx, config, logger); err != nil {
@@ -43,7 +43,11 @@ func WithTx[H any](handlerFactory httpserver.HandlerFactory[H], register httpser
 				ginCtx.Set(txKey{}, tx)
 				ginCtx.Next()
 
-				if ginCtx.Errors != nil {
+				if len(ginCtx.Errors) > 0 {
+					if rollbackErr := tx.Rollback(); rollbackErr != nil {
+						ginCtx.AbortWithError(http.StatusInternalServerError, fmt.Errorf("failed to rollback transaction: %w", rollbackErr))
+					}
+
 					return
 				}
 

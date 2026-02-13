@@ -12,14 +12,13 @@ import (
 	"github.com/jinzhu/inflection"
 	"github.com/justtrackio/gosoline/pkg/cfg"
 	"github.com/justtrackio/gosoline/pkg/log"
-	"github.com/spf13/cast"
 )
 
-type InputRead[K sqlr.KeyTypes] struct {
+type InputById[K sqlr.KeyTypes] struct {
 	Id K `uri:"id"`
 }
 
-type InputQuery[K sqlr.KeyTypes] struct {
+type InputQuery struct {
 	Filter sqlc.JsonFilter `json:"filter"`
 }
 
@@ -31,17 +30,17 @@ func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any
 		idPath := fmt.Sprintf("%s/:id", path)
 		router.GET(idPath, httpserver.Bind(handler.HandleRead))
 		router.DELETE(idPath, httpserver.Bind(handler.HandleDelete))
-		router.PUT(idPath, func(c *gin.Context) {
+		router.PUT(idPath, func(ginCtx *gin.Context) {
 			httpserver.Bind(func(ctx context.Context, input *IU) (httpserver.Response, error) {
 				var err error
 				var id K
 
-				if id, err = cast.ToE[K](c.Param("id")); err != nil {
+				if id, err = parseKeyFromString[K](ginCtx.Param("id")); err != nil {
 					return nil, fmt.Errorf("failed to cast id param to correct type: %w", err)
 				}
 
 				return handler.HandleUpdate(ctx, id, input)
-			})(c)
+			})(ginCtx)
 		})
 
 		plural := inflection.Plural(entityName)
@@ -91,18 +90,18 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleCreate(ctx context.Context, input *
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleRead(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleRead(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
 	if entity, err = h.repo.Read(ctx, input.Id); err != nil {
-		return nil, fmt.Errorf("failed to read entity with id %q: %w", input.Id, err)
+		return nil, fmt.Errorf("failed to read entity with id %v: %w", input.Id, err)
 	}
 
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleQuery(ctx context.Context, input *InputQuery[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleQuery(ctx context.Context, input *InputQuery) (httpserver.Response, error) {
 	var err error
 	var entities []E
 	var expression *sqlc.Expression
@@ -126,7 +125,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleUpdate(ctx context.Context, id K, i
 	var entity *E
 
 	if entity, err = h.repo.Read(ctx, id); err != nil {
-		return nil, fmt.Errorf("failed to read entity with id %q: %w", id, err)
+		return nil, fmt.Errorf("failed to read entity with id %v: %w", id, err)
 	}
 
 	if entity, err = h.transformer.TransformUpdate(ctx, entity, input); err != nil {
@@ -134,15 +133,15 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleUpdate(ctx context.Context, id K, i
 	}
 
 	if entity, err = h.repo.Update(ctx, entity); err != nil {
-		return nil, fmt.Errorf("failed to update entity with id %q: %w", id, err)
+		return nil, fmt.Errorf("failed to update entity with id %v: %w", id, err)
 	}
 
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleDelete(ctx context.Context, input *InputRead[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O]) HandleDelete(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
 	if err := h.repo.Delete(ctx, input.Id); err != nil {
-		return nil, fmt.Errorf("failed to delete entity with id %q: %w", input.Id, err)
+		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.Id, err)
 	}
 
 	return httpserver.NewStatusResponse(http.StatusOK), nil
