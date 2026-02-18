@@ -1,12 +1,12 @@
 module github.com/gosoline-project/sqlh
 
-go 1.25.0
+go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/gosoline-project/httpserver v0.1.1-0.20260109134823-7aa2fb1e31bd
-	github.com/gosoline-project/sqlc v0.0.0-20260213082221-5009e371492c
-	github.com/gosoline-project/sqlr v0.0.0-20260213090640-01ff885d7c34
+	github.com/gosoline-project/sqlc v0.0.0-20260218122711-f9b263fcf488
+	github.com/gosoline-project/sqlr v0.0.0-20260218123002-1bcf5aaee58b
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.54.2
 	github.com/spf13/cast v1.10.0
@@ -198,6 +198,4 @@ require (
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/mysql v1.6.0 // indirect
-	gorm.io/gorm v1.31.1 // indirect
 )
