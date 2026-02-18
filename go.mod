@@ -1,14 +1,14 @@
 module github.com/gosoline-project/sqlh
 
-go 1.24.0
+go 1.25.7
 
 require (
 	github.com/gin-gonic/gin v1.11.0
-	github.com/gosoline-project/httpserver v0.1.1-0.20260109134823-7aa2fb1e31bd
-	github.com/gosoline-project/sqlc v0.0.0-20260218122711-f9b263fcf488
-	github.com/gosoline-project/sqlr v0.0.0-20260218123002-1bcf5aaee58b
+	github.com/gosoline-project/httpserver v0.2.0
+	github.com/gosoline-project/sqlc v0.1.0
+	github.com/gosoline-project/sqlr v0.1.0
 	github.com/jinzhu/inflection v1.0.0
-	github.com/justtrackio/gosoline v0.54.2
+	github.com/justtrackio/gosoline v0.55.0
 	github.com/spf13/cast v1.10.0
 )
 
@@ -69,6 +69,7 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/elastic/go-elasticsearch/v7 v7.2.1-0.20190714143206-f1e755531ff4 // indirect
+	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.10 // indirect
@@ -84,7 +85,6 @@ require (
 	github.com/go-playground/mold/v4 v4.2.0 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
-	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
@@ -153,6 +153,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.1 // indirect
+	github.com/redis/go-redis/v9 v9.17.3 // indirect
 	github.com/segmentio/go-camelcase v0.0.0-20160726192923-7085f1e3c734 // indirect
 	github.com/segmentio/go-snakecase v1.2.0 // indirect
 	github.com/selm0/ladon v0.0.0-20231114080549-31144de4b38d // indirect
