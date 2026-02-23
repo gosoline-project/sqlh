@@ -112,10 +112,9 @@ func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleQuery(ctx context.Context, 
 		return nil, fmt.Errorf("failed to transform filter to expression: %w", err)
 	}
 
-	qb := sqlr.NewQueryBuilderSelect().
-		Where(expression)
-
-	if entities, err = h.repo.Query(ctx, qb); err != nil {
+	if entities, err = h.repo.Query(ctx, func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where(expression)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to query entities: %w", err)
 	}
 
