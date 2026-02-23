@@ -29,7 +29,7 @@ type (
 )
 
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers[int, User, UserCreateInput, UserUpdateInput, UserOutput](0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput, UserOutput](&UserTransformer{}))
+	return sqlh.WithCrudHandlers[int, User, UserCreateInput, UserUpdateInput, UserOutput, sqlh.SimpleListOutput[User], sqlh.SimpleListOutput[UserOutput]](0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput, UserOutput](&UserTransformer{}), sqlh.NewSimpleListFormatter[User, UserOutput]())
 }
 
 type UserTransformer struct{}

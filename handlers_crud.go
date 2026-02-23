@@ -22,8 +22,8 @@ type InputQuery struct {
 	Filter sqlc.JsonFilter `json:"filter"`
 }
 
-func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU, O]) httpserver.RegisterFactoryFunc {
-	return httpserver.With(NewHandlerCrud[K, E, IC, IU, O](transformerFactory), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU, O]) {
+func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any, LE any, LO any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU, O], formatter Formatter[E, O, LE, LO]) httpserver.RegisterFactoryFunc {
+	return httpserver.With(NewHandlerCrud[K, E, IC, IU, O, LE, LO](transformerFactory, formatter), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU, O, LE, LO]) {
 		path := fmt.Sprintf("/v%d/%s", version, entityName)
 		router.POST(path, httpserver.Bind(handler.HandleCreate))
 
@@ -49,8 +49,8 @@ func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any
 	})
 }
 
-func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](transformerFactory TransformerFactory[K, E, IC, IU, O]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU, O]] {
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*HandlerCrud[K, E, IC, IU, O], error) {
+func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any, LE any, LO any](transformerFactory TransformerFactory[K, E, IC, IU, O], formatter Formatter[E, O, LE, LO]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU, O, LE, LO]] {
+	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*HandlerCrud[K, E, IC, IU, O, LE, LO], error) {
 		var err error
 		var repo sqlr.Repository[K, E]
 		var transformer Transformer[K, E, IC, IU, O]
@@ -63,19 +63,21 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](
 			return nil, fmt.Errorf("failed to create transformer for handler: %w", err)
 		}
 
-		return &HandlerCrud[K, E, IC, IU, O]{
+		return &HandlerCrud[K, E, IC, IU, O, LE, LO]{
 			repo:        repo,
 			transformer: transformer,
+			formatter:   formatter,
 		}, nil
 	}
 }
 
-type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] struct {
+type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any, LE any, LO any] struct {
 	repo        sqlr.Repository[K, E]
 	transformer Transformer[K, E, IC, IU, O]
+	formatter   Formatter[E, O, LE, LO]
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleCreate(ctx context.Context, input *IC) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleCreate(ctx context.Context, input *IC) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -90,7 +92,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleCreate(ctx context.Context, input *
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleRead(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleRead(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -101,7 +103,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleRead(ctx context.Context, input *In
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleQuery(ctx context.Context, input *InputQuery) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleQuery(ctx context.Context, input *InputQuery) (httpserver.Response, error) {
 	var err error
 	var entities []E
 	var expression *sqlc.Expression
@@ -120,7 +122,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleQuery(ctx context.Context, input *I
 	return h.outMultiple(ctx, entities)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleUpdate(ctx context.Context, id K, input *IU) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleUpdate(ctx context.Context, id K, input *IU) (httpserver.Response, error) {
 	var err error
 	var entity *E
 
@@ -139,7 +141,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleUpdate(ctx context.Context, id K, i
 	return h.outSingle(ctx, entity)
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) HandleDelete(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) HandleDelete(ctx context.Context, input *InputById[K]) (httpserver.Response, error) {
 	if err := h.repo.Delete(ctx, input.Id); err != nil {
 		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.Id, err)
 	}
@@ -147,7 +149,7 @@ func (h *HandlerCrud[K, E, IC, IU, O]) HandleDelete(ctx context.Context, input *
 	return httpserver.NewStatusResponse(http.StatusOK), nil
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) outSingle(ctx context.Context, entity *E) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) outSingle(ctx context.Context, entity *E) (httpserver.Response, error) {
 	var ok bool
 	var err error
 	var outTransformer TransformerOutput[K, E, O]
@@ -164,12 +166,22 @@ func (h *HandlerCrud[K, E, IC, IU, O]) outSingle(ctx context.Context, entity *E)
 	return httpserver.NewJsonResponse(out), nil
 }
 
-func (h *HandlerCrud[K, E, IC, IU, O]) outMultiple(ctx context.Context, entities []E) (httpserver.Response, error) {
+func (h *HandlerCrud[K, E, IC, IU, O, LE, LO]) outMultiple(ctx context.Context, entities []E) (httpserver.Response, error) {
 	var ok bool
 	var err error
 	var outTransformer TransformerOutput[K, E, O]
 	if outTransformer, ok = h.transformer.(TransformerOutput[K, E, O]); !ok {
-		return httpserver.NewJsonResponse(entities), nil
+		es := make([]*E, len(entities))
+		for idx, e := range entities {
+			es[idx] = &e
+		}
+
+		var le LE
+		if le, err = h.formatter.FormatEntityList(ctx, es); err != nil {
+			return nil, fmt.Errorf("failed to format output: %w", err)
+		}
+
+		return httpserver.NewJsonResponse(le), nil
 	}
 
 	outs := make([]*O, len(entities))
@@ -180,5 +192,10 @@ func (h *HandlerCrud[K, E, IC, IU, O]) outMultiple(ctx context.Context, entities
 		}
 	}
 
-	return httpserver.NewJsonResponse(outs), nil
+	var lo LO
+	if lo, err = h.formatter.FormatOutputList(ctx, outs); err != nil {
+		return nil, fmt.Errorf("failed to format output: %w", err)
+	}
+
+	return httpserver.NewJsonResponse(lo), nil
 }
