@@ -19,8 +19,5 @@ func SimpleTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O an
 type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] interface {
 	TransformCreate(ctx context.Context, input *IC) (*E, error)
 	TransformUpdate(ctx context.Context, entity *E, input *IU) (*E, error)
-}
-
-type TransformerOutput[K sqlr.KeyTypes, E sqlr.Entitier[K], O any] interface {
 	TransformOutput(ctx context.Context, entity *E) (*O, error)
 }
