@@ -20,4 +20,4 @@ sqlc:
       database: examples
     migrations:
       enabled: true
-      path: build/migrations
+      path: ../build/migrations

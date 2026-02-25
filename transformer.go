@@ -3,24 +3,47 @@ package sqlh
 import (
 	"context"
 
+	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlr"
 	"github.com/justtrackio/gosoline/pkg/cfg"
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-type TransformerFactory[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU, O], error)
+// Transformer converts between HTTP input DTOs and database entities, and
+// renders HTTP responses from entities. It is the central extension point for
+// [HandlerCrud]: implement this interface to control how incoming request
+// bodies are mapped to entities and how entities are serialised in responses.
+//
+// Type parameters:
+//   - K: the primary key type (must satisfy [sqlr.KeyTypes]).
+//   - E: the entity type (must implement [sqlr.Entitier][K]).
+//   - IC: the create-input DTO type.
+//   - IU: the update-input DTO type.
+type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] interface {
+	// TransformCreateInput converts a create-input DTO into a new entity that
+	// can be persisted by the repository.
+	TransformCreateInput(ctx context.Context, input *IC) (*E, error)
+	// TransformUpdateInput merges an update-input DTO into an existing entity
+	// and returns the updated entity ready for persistence.
+	TransformUpdateInput(ctx context.Context, entity *E, input *IU) (*E, error)
+	// RenderEntityResponse serialises a single entity into an HTTP response.
+	RenderEntityResponse(ctx context.Context, entity *E) (httpserver.Response, error)
+	// RenderQueryResponse serialises a slice of entities into an HTTP response.
+	RenderQueryResponse(ctx context.Context, entity []E) (httpserver.Response, error)
+}
 
-func SimpleTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any](transformer Transformer[K, E, IC, IU, O]) TransformerFactory[K, E, IC, IU, O] {
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU, O], error) {
+// TransformerFactory is a constructor function for a [Transformer]. It follows
+// the standard gosoline factory pattern, receiving the application context,
+// configuration, and logger so that the transformer can perform any necessary
+// setup (e.g. loading config values or creating dependencies) at startup.
+type TransformerFactory[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error)
+
+// SimpleTransformer wraps an already-constructed [Transformer] into a
+// [TransformerFactory]. This is useful when the transformer requires no
+// configuration or lazy initialisation and can be created before the factory
+// is called.
+func SimpleTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformer Transformer[K, E, IC, IU]) TransformerFactory[K, E, IC, IU] {
+	return func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error) {
 		return transformer, nil
 	}
-}
-
-type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any, O any] interface {
-	TransformCreate(ctx context.Context, input *IC) (*E, error)
-	TransformUpdate(ctx context.Context, entity *E, input *IU) (*E, error)
-}
-
-type TransformerOutput[K sqlr.KeyTypes, E sqlr.Entitier[K], O any] interface {
-	TransformOutput(ctx context.Context, entity *E) (*O, error)
 }
