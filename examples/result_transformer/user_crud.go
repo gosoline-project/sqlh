@@ -9,6 +9,7 @@ import (
 	"github.com/gosoline-project/sqlr"
 )
 
+// snippet-start: types
 type (
 	UserCreateInput struct {
 		Name string `json:"name"`
@@ -28,12 +29,18 @@ type (
 	}
 )
 
+// snippet-end: types
+
+// snippet-start: crud
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(0, "user", sqlh.NewJSONResultsTransformer[int, User, UserCreateInput, UserUpdateInput](&UserTransformer{}))
+	return sqlh.WithCrudHandlers(0, "user", sqlh.NewJsonResultsTransformer[int, User, UserCreateInput, UserUpdateInput](&UserTransformer{}))
 }
+
+// snippet-end: crud
 
 var _ sqlh.JsonResultsTransformer[int, User, UserCreateInput, UserUpdateInput] = (*UserTransformer)(nil)
 
+// snippet-start: transformer
 type UserTransformer struct{}
 
 func (t *UserTransformer) TransformCreateInput(ctx context.Context, input *UserCreateInput) (*User, error) {
@@ -56,3 +63,5 @@ func (t *UserTransformer) TransformOutput(ctx context.Context, user *User) (any,
 		UpdatedAt: user.UpdatedAt,
 	}, nil
 }
+
+// snippet-end: transformer

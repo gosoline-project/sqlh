@@ -10,12 +10,12 @@ import (
 )
 
 // JsonResultsTransformer is a simplified variant of [Transformer] for use with
-// [NewJSONResultsTransformer]. Instead of producing full [httpserver.Response]
+// [NewJsonResultsTransformer]. Instead of producing full [httpserver.Response]
 // values, implementations only need to supply TransformCreateInput,
 // TransformUpdateInput, and a single TransformOutput method that converts one
 // entity to any JSON-serialisable value. The JSON wrapping of single and
 // multi-entity responses is handled automatically by the wrapper created by
-// [NewJSONResultsTransformer].
+// [NewJsonResultsTransformer].
 //
 // Type parameters:
 //   - K: the primary key type (must satisfy [sqlr.KeyTypes]).
@@ -70,12 +70,12 @@ func (r resultsTransformerWrapper[K, E, IC, IU]) RenderQueryResponse(ctx context
 	return httpserver.NewJsonResponse(output), nil
 }
 
-// NewJSONResultsTransformer wraps a [JsonResultsTransformer] into a
+// NewJsonResultsTransformer wraps a [JsonResultsTransformer] into a
 // [TransformerFactory] that satisfies the full [Transformer] interface. The
 // wrapper implements [Transformer.RenderEntityResponse] and
 // [Transformer.RenderQueryResponse] by calling TransformOutput on each entity
 // and encoding the result as a JSON HTTP response.
-func NewJSONResultsTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformer JsonResultsTransformer[K, E, IC, IU]) TransformerFactory[K, E, IC, IU] {
+func NewJsonResultsTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformer JsonResultsTransformer[K, E, IC, IU]) TransformerFactory[K, E, IC, IU] {
 	return func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error) {
 		return &resultsTransformerWrapper[K, E, IC, IU]{
 			transformer: transformer,
