@@ -9,8 +9,6 @@ run:
     - integration
     - fixtures
   modules-download-mode: readonly
-  skip-dirs:
-    - examples
 
 output:
   formats:
@@ -23,6 +21,10 @@ output:
 formatters:
   enable:
     - gofumpt
+
+  exclusions:
+    paths:
+      - examples/
 
 linters:
   default: none
