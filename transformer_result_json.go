@@ -38,6 +38,30 @@ type resultsTransformerWrapper[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU a
 	transformer JsonResultsTransformer[K, E, IC, IU]
 }
 
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderCreate(qb *sqlr.QueryBuilderCreate) {
+	if builder, ok := r.transformer.(BuilderCreateAware); ok {
+		builder.BuilderCreate(qb)
+	}
+}
+
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderRead(qb *sqlr.QueryBuilderRead) {
+	if builder, ok := r.transformer.(BuilderReadAware); ok {
+		builder.BuilderRead(qb)
+	}
+}
+
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
+	if builder, ok := r.transformer.(BuilderUpdateReadAware); ok {
+		builder.BuilderUpdateRead(qb)
+	}
+}
+
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate) {
+	if builder, ok := r.transformer.(BuilderUpdateWriteAware); ok {
+		builder.BuilderUpdateWrite(qb)
+	}
+}
+
 func (r resultsTransformerWrapper[K, E, IC, IU]) TransformCreateInput(ctx context.Context, input *IC) (*E, error) {
 	return r.transformer.TransformCreateInput(ctx, input)
 }
@@ -74,7 +98,9 @@ func (r resultsTransformerWrapper[K, E, IC, IU]) RenderQueryResponse(ctx context
 // [TransformerFactory] that satisfies the full [Transformer] interface. The
 // wrapper implements [Transformer.RenderEntityResponse] and
 // [Transformer.RenderQueryResponse] by calling TransformOutput on each entity
-// and encoding the result as a JSON HTTP response.
+// and encoding the result as a JSON HTTP response. If the provided
+// [JsonResultsTransformer] also implements any of the builder-aware interfaces,
+// those hooks are forwarded as well.
 func NewJsonResultsTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformer JsonResultsTransformer[K, E, IC, IU]) TransformerFactory[K, E, IC, IU] {
 	return func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error) {
 		return &resultsTransformerWrapper[K, E, IC, IU]{

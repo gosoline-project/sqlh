@@ -32,6 +32,22 @@ type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] interface 
 	RenderQueryResponse(ctx context.Context, entity []E) (httpserver.Response, error)
 }
 
+type BuilderCreateAware interface {
+	BuilderCreate(qb *sqlr.QueryBuilderCreate)
+}
+
+type BuilderReadAware interface {
+	BuilderRead(qb *sqlr.QueryBuilderRead)
+}
+
+type BuilderUpdateReadAware interface {
+	BuilderUpdateRead(qb *sqlr.QueryBuilderRead)
+}
+
+type BuilderUpdateWriteAware interface {
+	BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate)
+}
+
 // TransformerFactory is a constructor function for a [Transformer]. It follows
 // the standard gosoline factory pattern, receiving the application context,
 // configuration, and logger so that the transformer can perform any necessary

@@ -92,10 +92,32 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 			return nil, fmt.Errorf("failed to create transformer for handler: %w", err)
 		}
 
-		return &HandlerCrud[K, E, IC, IU]{
-			repo:        repo,
-			transformer: transformer,
-		}, nil
+		handler := &HandlerCrud[K, E, IC, IU]{
+			repo:               repo,
+			transformer:        transformer,
+			builderCreate:      func(qb *sqlr.QueryBuilderCreate) {},
+			builderRead:        func(qb *sqlr.QueryBuilderRead) {},
+			builderUpdateRead:  func(qb *sqlr.QueryBuilderRead) {},
+			builderUpdateWrite: func(qb *sqlr.QueryBuilderUpdate) {},
+		}
+
+		if builder, ok := transformer.(BuilderCreateAware); ok {
+			handler.builderCreate = builder.BuilderCreate
+		}
+
+		if builder, ok := transformer.(BuilderReadAware); ok {
+			handler.builderRead = builder.BuilderRead
+		}
+
+		if builder, ok := transformer.(BuilderUpdateReadAware); ok {
+			handler.builderUpdateRead = builder.BuilderUpdateRead
+		}
+
+		if builder, ok := transformer.(BuilderUpdateWriteAware); ok {
+			handler.builderUpdateWrite = builder.BuilderUpdateWrite
+		}
+
+		return handler, nil
 	}
 }
 
@@ -107,8 +129,12 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 // Use [WithCrudHandlers] to register all routes in one call, or call the
 // individual Handle* methods to attach only the routes you need.
 type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] struct {
-	repo        sqlr.Repository[K, E]
-	transformer Transformer[K, E, IC, IU]
+	repo               sqlr.Repository[K, E]
+	transformer        Transformer[K, E, IC, IU]
+	builderCreate      func(qb *sqlr.QueryBuilderCreate)
+	builderRead        func(qb *sqlr.QueryBuilderRead)
+	builderUpdateRead  func(qb *sqlr.QueryBuilderRead)
+	builderUpdateWrite func(qb *sqlr.QueryBuilderUpdate)
 }
 
 // HandleCreate handles a create request. It transforms the input DTO into an
@@ -123,7 +149,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleCreate(ctx context.Context, input *IC)
 		return nil, fmt.Errorf("failed to transform create input: %w", err)
 	}
 
-	if err = h.repo.Create(ctx, entity); err != nil {
+	if err = h.repo.Create(ctx, entity, h.builderCreate); err != nil {
 		return nil, fmt.Errorf("failed to create entity: %w", err)
 	}
 
@@ -137,7 +163,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleRead(ctx context.Context, input *Input
 	var err error
 	var entity *E
 
-	if entity, err = h.repo.Read(ctx, input.ID); err != nil {
+	if entity, err = h.repo.Read(ctx, input.ID, h.builderRead); err != nil {
 		return nil, fmt.Errorf("failed to read entity with id %v: %w", input.ID, err)
 	}
 
@@ -173,7 +199,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 	var err error
 	var entity *E
 
-	if entity, err = h.repo.Read(ctx, id); err != nil {
+	if entity, err = h.repo.Read(ctx, id, h.builderUpdateRead); err != nil {
 		return nil, fmt.Errorf("failed to read entity with id %v: %w", id, err)
 	}
 
@@ -181,7 +207,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 		return nil, fmt.Errorf("failed to transform update input: %w", err)
 	}
 
-	if entity, err = h.repo.Update(ctx, entity); err != nil {
+	if entity, err = h.repo.Update(ctx, entity, h.builderUpdateWrite); err != nil {
 		return nil, fmt.Errorf("failed to update entity with id %v: %w", id, err)
 	}
 
