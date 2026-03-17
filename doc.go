@@ -18,5 +18,6 @@
 //     DTOs and database entities. [JsonResultsTransformer] together with
 //     [NewJsonResultsTransformer] provide a convenience implementation that
 //     renders entities as JSON without needing to construct [httpserver.Response]
-//     values manually.
+//     values manually. Association handling can be configured on relationship
+//     fields with `sqlh` tags such as `sqlh:"preload:read,query;sync:create,update"`.
 package sqlh

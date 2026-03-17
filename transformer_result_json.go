@@ -50,6 +50,12 @@ func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderRead(qb *sqlr.QueryBuild
 	}
 }
 
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderQuery(qb *sqlr.QueryBuilderSelect) {
+	if builder, ok := r.transformer.(BuilderQueryAware); ok {
+		builder.BuilderQuery(qb)
+	}
+}
+
 func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
 	if builder, ok := r.transformer.(BuilderUpdateReadAware); ok {
 		builder.BuilderUpdateRead(qb)

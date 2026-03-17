@@ -83,9 +83,14 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 		var err error
 		var repo sqlr.Repository[K, E]
 		var transformer Transformer[K, E, IC, IU]
+		var entityTags *entityBuilderTags
 
 		if repo, err = sqlr.NewRepository[K, E](ctx, config, logger, "default"); err != nil {
 			return nil, fmt.Errorf("failed to create repository for handler: %w", err)
+		}
+
+		if entityTags, err = parseEntityBuilderTags[E](); err != nil {
+			return nil, fmt.Errorf("failed to parse entity %T %s tags: %w", *new(E), sqlhTagName, err)
 		}
 
 		if transformer, err = transformerFactory(ctx, config, logger); err != nil {
@@ -95,26 +100,31 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 		handler := &HandlerCrud[K, E, IC, IU]{
 			repo:               repo,
 			transformer:        transformer,
-			builderCreate:      func(qb *sqlr.QueryBuilderCreate) {},
-			builderRead:        func(qb *sqlr.QueryBuilderRead) {},
-			builderUpdateRead:  func(qb *sqlr.QueryBuilderRead) {},
-			builderUpdateWrite: func(qb *sqlr.QueryBuilderUpdate) {},
+			builderCreate:      composeBuilders(builderCreateFromTags(entityTags)),
+			builderRead:        composeBuilders(builderReadFromTags(entityTags)),
+			builderQuery:       composeBuilders(builderQueryFromTags(entityTags)),
+			builderUpdateRead:  composeBuilders(builderUpdateReadFromTags(entityTags)),
+			builderUpdateWrite: composeBuilders(builderUpdateWriteFromTags(entityTags)),
 		}
 
 		if builder, ok := transformer.(BuilderCreateAware); ok {
-			handler.builderCreate = builder.BuilderCreate
+			handler.builderCreate = composeBuilders(builderCreateFromTags(entityTags), builder.BuilderCreate)
 		}
 
 		if builder, ok := transformer.(BuilderReadAware); ok {
-			handler.builderRead = builder.BuilderRead
+			handler.builderRead = composeBuilders(builderReadFromTags(entityTags), builder.BuilderRead)
+		}
+
+		if builder, ok := transformer.(BuilderQueryAware); ok {
+			handler.builderQuery = composeBuilders(builderQueryFromTags(entityTags), builder.BuilderQuery)
 		}
 
 		if builder, ok := transformer.(BuilderUpdateReadAware); ok {
-			handler.builderUpdateRead = builder.BuilderUpdateRead
+			handler.builderUpdateRead = composeBuilders(builderUpdateReadFromTags(entityTags), builder.BuilderUpdateRead)
 		}
 
 		if builder, ok := transformer.(BuilderUpdateWriteAware); ok {
-			handler.builderUpdateWrite = builder.BuilderUpdateWrite
+			handler.builderUpdateWrite = composeBuilders(builderUpdateWriteFromTags(entityTags), builder.BuilderUpdateWrite)
 		}
 
 		return handler, nil
@@ -133,6 +143,7 @@ type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] struct {
 	transformer        Transformer[K, E, IC, IU]
 	builderCreate      func(qb *sqlr.QueryBuilderCreate)
 	builderRead        func(qb *sqlr.QueryBuilderRead)
+	builderQuery       func(qb *sqlr.QueryBuilderSelect)
 	builderUpdateRead  func(qb *sqlr.QueryBuilderRead)
 	builderUpdateWrite func(qb *sqlr.QueryBuilderUpdate)
 }
@@ -184,6 +195,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleQuery(ctx context.Context, input *Inpu
 
 	if entities, err = h.repo.Query(ctx, func(qb *sqlr.QueryBuilderSelect) {
 		qb.Where(expression)
+		h.builderQuery(qb)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to query entities: %w", err)
 	}

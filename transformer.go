@@ -40,6 +40,10 @@ type BuilderReadAware interface {
 	BuilderRead(qb *sqlr.QueryBuilderRead)
 }
 
+type BuilderQueryAware interface {
+	BuilderQuery(qb *sqlr.QueryBuilderSelect)
+}
+
 type BuilderUpdateReadAware interface {
 	BuilderUpdateRead(qb *sqlr.QueryBuilderRead)
 }
