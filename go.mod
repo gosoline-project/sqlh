@@ -4,12 +4,14 @@ go 1.25.7
 
 require (
 	github.com/gin-gonic/gin v1.11.0
+	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/gosoline-project/httpserver v0.2.0
 	github.com/gosoline-project/sqlc v0.2.0
-	github.com/gosoline-project/sqlr v0.4.0
+	github.com/gosoline-project/sqlr v0.5.0
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.57.2
 	github.com/spf13/cast v1.10.0
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -83,7 +85,6 @@ require (
 	github.com/go-playground/mold/v4 v4.2.0 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
-	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
@@ -156,7 +157,6 @@ require (
 	github.com/selm0/ladon v0.0.0-20231114080549-31144de4b38d // indirect
 	github.com/sethvargo/go-retry v0.2.4 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twmb/franz-go v1.20.3 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.16.1 // indirect

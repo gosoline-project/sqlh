@@ -14,7 +14,6 @@ func composeBuilders[QB any](builders ...func(qb QB)) func(qb QB) {
 	}
 }
 
-
 func builderCreateFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderCreate) {
 	if tags == nil || len(tags.createSyncPaths) == 0 {
 		return nil
