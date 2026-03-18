@@ -1,0 +1,28 @@
+app:
+  env: test
+  name: crud_test
+
+sqlc:
+  default:
+    driver: mysql
+    timeouts:
+      readTimeout: 50ms
+      writeTimeout: 50ms
+      timeout: 50ms
+    retry:
+      enabled: true
+    uri:
+      host: 127.0.0.1
+      port: 3306
+      user: root
+      password:
+      database: gosoline
+    migrations:
+      path: migrations
+
+test:
+  auto_detect:
+    enabled: false
+  components:
+    mysql:
+      default: ~
