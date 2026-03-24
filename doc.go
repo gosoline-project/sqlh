@@ -15,9 +15,11 @@
 //  3. Generic CRUD handlers: [WithCrudHandlers] and [HandlerCrud] wire up a
 //     full set of Create/Read/Update/Delete/Query HTTP endpoints for any
 //     SQL-backed entity type, using a [Transformer] to convert between HTTP
-//     DTOs and database entities. [JsonResultsTransformer] together with
-//     [NewJsonResultsTransformer] provide a convenience implementation that
-//     renders entities as JSON without needing to construct [httpserver.Response]
-//     values manually. Association handling can be configured on relationship
-//     fields with `sqlh` tags such as `sqlh:"preload:read,query;sync:create,update"`.
+//     DTOs and database entities. Handler setup can be customized with options
+//     such as [WithClientName] and [WithRepositoryFactory].
+//     [JsonResultsTransformer] together with [NewJsonResultsTransformer]
+//     provide a convenience implementation that renders entities as JSON
+//     without needing to construct [httpserver.Response] values manually.
+//     Association handling can be configured on relationship fields with
+//     `sqlh` tags such as `sqlh:"preload:read,query;sync:create,update,delete"`.
 package sqlh

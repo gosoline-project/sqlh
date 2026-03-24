@@ -19,14 +19,14 @@ type crudTaggedItem struct {
 	sqlr.Entity[int64]
 	ChildID int64             `db:"child_id"`
 	Name    string            `db:"name"`
-	Child   crudTaggedChild   `db:"-,belongsTo:child_id" sqlh:"preload:read,update"`
-	Tags    []crudTaggedChild `db:"-,many2many:crud_tagged_item_tags" sqlh:"preload:read;sync:create,update"`
+	Child   crudTaggedChild   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read,update"`
+	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:read;sync:create,update,delete"`
 }
 
 type crudTaggedQueryOnlyItem struct {
 	sqlr.Entity[int64]
 	ChildID int64           `db:"child_id"`
-	Child   crudTaggedChild `db:"-,belongsTo:child_id" sqlh:"preload:query"`
+	Child   crudTaggedChild `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:query"`
 }
 
 type crudTaggedCreateInput struct {
@@ -81,6 +81,10 @@ func (t *crudInterfaceTransformer) BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdat
 	qb.SyncAssociation("Child")
 }
 
+func (t *crudInterfaceTransformer) BuilderDelete(qb *sqlr.QueryBuilderDelete) {
+	qb.SyncAssociation("Child")
+}
+
 func TestHandlerCrud_TagBuildersApplyToReadAndQuery(t *testing.T) {
 	tags, err := parseEntityBuilderTags[crudTaggedItem]()
 	require.NoError(t, err)
@@ -114,14 +118,17 @@ func TestHandlerCrud_TagBuildersApplyToCreateAndUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	createQB := sqlr.NewQueryBuilderCreate()
+	deleteQB := sqlr.NewQueryBuilderDelete()
 	updateReadQB := sqlr.NewQueryBuilderRead()
 	updateWriteQB := sqlr.NewQueryBuilderUpdate()
 
 	composeBuilders(builderCreateFromTags(tags))(createQB)
+	composeBuilders(builderDeleteFromTags(tags))(deleteQB)
 	composeBuilders(builderUpdateReadFromTags(tags))(updateReadQB)
 	composeBuilders(builderUpdateWriteFromTags(tags))(updateWriteQB)
 
 	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromCreateBuilder(createQB))
+	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromDeleteBuilder(deleteQB))
 	require.ElementsMatch(t, []string{"Child"}, preloadRelationsFromReadBuilder(updateReadQB))
 	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromUpdateBuilder(updateWriteQB))
 }
@@ -135,18 +142,21 @@ func TestHandlerCrud_ComposesTagAndInterfaceBuilders(t *testing.T) {
 	createQB := sqlr.NewQueryBuilderCreate()
 	readQB := sqlr.NewQueryBuilderRead()
 	queryQB := sqlr.NewQueryBuilderSelect()
+	deleteQB := sqlr.NewQueryBuilderDelete()
 	updateReadQB := sqlr.NewQueryBuilderRead()
 	updateWriteQB := sqlr.NewQueryBuilderUpdate()
 
 	composeBuilders(builderCreateFromTags(tags), transformer.BuilderCreate)(createQB)
 	composeBuilders(builderReadFromTags(tags), transformer.BuilderRead)(readQB)
 	composeBuilders(builderQueryFromTags(tags), transformer.BuilderQuery)(queryQB)
+	composeBuilders(builderDeleteFromTags(tags), transformer.BuilderDelete)(deleteQB)
 	composeBuilders(builderUpdateReadFromTags(tags), transformer.BuilderUpdateRead)(updateReadQB)
 	composeBuilders(builderUpdateWriteFromTags(tags), transformer.BuilderUpdateWrite)(updateWriteQB)
 
 	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromCreateBuilder(createQB))
 	require.ElementsMatch(t, []string{"Child", "ExtraRead", "Tags"}, preloadRelationsFromReadBuilder(readQB))
 	require.Equal(t, []string{"ExtraQuery"}, preloadRelationsFromSelectBuilder(queryQB))
+	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromDeleteBuilder(deleteQB))
 	require.ElementsMatch(t, []string{"Child", "ExtraUpdateRead"}, preloadRelationsFromReadBuilder(updateReadQB))
 	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromUpdateBuilder(updateWriteQB))
 }
@@ -173,6 +183,10 @@ func syncPathsFromCreateBuilder(qb *sqlr.QueryBuilderCreate) []string {
 }
 
 func syncPathsFromUpdateBuilder(qb *sqlr.QueryBuilderUpdate) []string {
+	return syncPathsFromBuilder(qb)
+}
+
+func syncPathsFromDeleteBuilder(qb *sqlr.QueryBuilderDelete) []string {
 	return syncPathsFromBuilder(qb)
 }
 

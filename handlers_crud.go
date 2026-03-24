@@ -44,11 +44,15 @@ type InputQuery struct {
 // transformerFactory is called once at startup to produce the [Transformer]
 // used by all handlers to convert between HTTP DTOs and database entities.
 //
+// options can be used to customize repository creation, for example by
+// selecting a non-default SQL client with [WithClientName] or by providing a
+// custom repository factory with [WithRepositoryFactory].
+//
 // The returned [httpserver.RegisterFactoryFunc] is suitable for passing
 // directly to an httpserver setup function, optionally combined with [WithTx]
 // to run each request inside a database transaction.
-func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU]) httpserver.RegisterFactoryFunc {
-	return httpserver.With(NewHandlerCrud(transformerFactory), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU]) {
+func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](version int, entityName string, transformerFactory TransformerFactory[K, E, IC, IU], options ...Option[K, E]) httpserver.RegisterFactoryFunc {
+	return httpserver.With(NewHandlerCrud(transformerFactory, options...), func(router *httpserver.Router, handler *HandlerCrud[K, E, IC, IU]) {
 		path := fmt.Sprintf("/v%d/%s", version, entityName)
 		router.POST(path, httpserver.Bind(handler.HandleCreate))
 
@@ -75,17 +79,27 @@ func WithCrudHandlers[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](versi
 }
 
 // NewHandlerCrud returns an [httpserver.HandlerFactory] that creates a
-// [HandlerCrud] at server startup. It initialises a [sqlr.Repository] against
-// the "default" SQL connection and builds the [Transformer] via
-// transformerFactory.
-func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformerFactory TransformerFactory[K, E, IC, IU]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU]] {
+// [HandlerCrud] at server startup. By default it initialises a
+// [sqlr.Repository] against the "default" SQL connection and builds the
+// [Transformer] via transformerFactory.
+//
+// options can override the SQL client name used for the default repository via
+// [WithClientName], or replace repository construction entirely via
+// [WithRepositoryFactory].
+func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformerFactory TransformerFactory[K, E, IC, IU], options ...Option[K, E]) httpserver.HandlerFactory[HandlerCrud[K, E, IC, IU]] {
+	opts := newOpts[K, E]()
+
+	for _, opt := range options {
+		opt(opts)
+	}
+
 	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*HandlerCrud[K, E, IC, IU], error) {
 		var err error
 		var repo sqlr.Repository[K, E]
 		var transformer Transformer[K, E, IC, IU]
 		var entityTags *entityBuilderTags
 
-		if repo, err = sqlr.NewRepository[K, E](ctx, config, logger, "default"); err != nil {
+		if repo, err = opts.repositoryFactory(ctx, config, logger, opts.clientName); err != nil {
 			return nil, fmt.Errorf("failed to create repository for handler: %w", err)
 		}
 
@@ -103,6 +117,7 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 			builderCreate:      composeBuilders(builderCreateFromTags(entityTags)),
 			builderRead:        composeBuilders(builderReadFromTags(entityTags)),
 			builderQuery:       composeBuilders(builderQueryFromTags(entityTags)),
+			builderDelete:      composeBuilders(builderDeleteFromTags(entityTags)),
 			builderUpdateRead:  composeBuilders(builderUpdateReadFromTags(entityTags)),
 			builderUpdateWrite: composeBuilders(builderUpdateWriteFromTags(entityTags)),
 		}
@@ -117,6 +132,10 @@ func NewHandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transfo
 
 		if builder, ok := transformer.(BuilderQueryAware); ok {
 			handler.builderQuery = composeBuilders(builderQueryFromTags(entityTags), builder.BuilderQuery)
+		}
+
+		if builder, ok := transformer.(BuilderDeleteAware); ok {
+			handler.builderDelete = composeBuilders(builderDeleteFromTags(entityTags), builder.BuilderDelete)
 		}
 
 		if builder, ok := transformer.(BuilderUpdateReadAware); ok {
@@ -144,6 +163,7 @@ type HandlerCrud[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] struct {
 	builderCreate      func(qb *sqlr.QueryBuilderCreate)
 	builderRead        func(qb *sqlr.QueryBuilderRead)
 	builderQuery       func(qb *sqlr.QueryBuilderSelect)
+	builderDelete      func(qb *sqlr.QueryBuilderDelete)
 	builderUpdateRead  func(qb *sqlr.QueryBuilderRead)
 	builderUpdateWrite func(qb *sqlr.QueryBuilderUpdate)
 }
@@ -229,7 +249,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 // HandleDelete handles a delete request. It removes the entity identified by
 // input.ID from the repository and returns a 200 OK response on success.
 func (h *HandlerCrud[K, E, IC, IU]) HandleDelete(ctx context.Context, input *InputByID[K]) (httpserver.Response, error) {
-	if err := h.repo.Delete(ctx, input.ID); err != nil {
+	if err := h.repo.Delete(ctx, input.ID, h.builderDelete); err != nil {
 		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.ID, err)
 	}
 

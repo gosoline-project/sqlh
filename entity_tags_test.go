@@ -16,15 +16,15 @@ type tagNestedEntity struct {
 type tagChildEntity struct {
 	sqlr.Entity[int64]
 	ParentID int64             `db:"parent_id"`
-	Nested   []tagNestedEntity `db:"-,foreignKey:child_id" sqlh:"preload:read;sync:update"`
+	Nested   []tagNestedEntity `db:"-" sqlr:"foreignKey:child_id" sqlh:"preload:read;sync:update"`
 }
 
 type tagRootEntity struct {
 	sqlr.Entity[int64]
 	ChildID int64            `db:"child_id"`
 	Name    string           `db:"name"`
-	Child   tagChildEntity   `db:"-,belongsTo:child_id" sqlh:"preload:read,update"`
-	Tags    []tagChildEntity `db:"-,foreignKey:root_id" sqlh:"sync:create,update"`
+	Child   tagChildEntity   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read,update"`
+	Tags    []tagChildEntity `db:"-" sqlr:"foreignKey:root_id" sqlh:"sync:create,update,delete"`
 	Created time.Time        `db:"created"`
 }
 
@@ -41,13 +41,13 @@ type invalidTaggedValueEntity struct {
 type invalidDirectiveEntity struct {
 	sqlr.Entity[int64]
 	ChildID int64          `db:"child_id"`
-	Child   tagChildEntity `db:"-,belongsTo:child_id" sqlh:"unknown:read"`
+	Child   tagChildEntity `db:"-" sqlr:"belongsTo:child_id" sqlh:"unknown:read"`
 }
 
 type invalidDirectivePhaseEntity struct {
 	sqlr.Entity[int64]
 	ChildID int64          `db:"child_id"`
-	Child   tagChildEntity `db:"-,belongsTo:child_id" sqlh:"sync:read"`
+	Child   tagChildEntity `db:"-" sqlr:"belongsTo:child_id" sqlh:"sync:read"`
 }
 
 type autoRelationChild struct {
@@ -66,6 +66,7 @@ func TestParseEntityBuilderTags(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"Tags"}, tags.createSyncPaths)
+	require.Equal(t, []string{"Tags"}, tags.deleteSyncPaths)
 	require.ElementsMatch(t, []string{"Child", "Child.Nested", "Tags.Nested"}, tags.readPreloadPaths)
 	require.Empty(t, tags.queryPreloadPaths)
 	require.Equal(t, []string{"Child"}, tags.updatePreloadPaths)

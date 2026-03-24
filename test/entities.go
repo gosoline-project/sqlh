@@ -16,8 +16,8 @@ type Post struct {
 	AuthorID int64  `db:"author_id"`
 	Title    string `db:"title"`
 	Status   string `db:"status"`
-	Author   Author `db:"-,belongsTo:author_id" sqlh:"preload:read,query"`
-	Tags     []Tag  `db:"-,many2many:post_tags" sqlh:"preload:read,query;sync:create,update"`
+	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,query"`
+	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags" sqlh:"preload:read,query;sync:create,update,delete"`
 }
 
 type Tag struct {

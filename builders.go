@@ -54,6 +54,18 @@ func builderQueryFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSel
 	}
 }
 
+func builderDeleteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderDelete) {
+	if tags == nil || len(tags.deleteSyncPaths) == 0 {
+		return nil
+	}
+
+	paths := append([]string(nil), tags.deleteSyncPaths...)
+
+	return func(qb *sqlr.QueryBuilderDelete) {
+		qb.SyncAssociation(paths...)
+	}
+}
+
 func builderUpdateReadFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderRead) {
 	if tags == nil || len(tags.updatePreloadPaths) == 0 {
 		return nil

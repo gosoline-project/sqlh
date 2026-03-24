@@ -13,6 +13,7 @@ const sqlhTagName = "sqlh"
 
 type entityBuilderTags struct {
 	createSyncPaths    []string
+	deleteSyncPaths    []string
 	readPreloadPaths   []string
 	queryPreloadPaths  []string
 	updatePreloadPaths []string
@@ -47,6 +48,7 @@ func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
 	}
 
 	tags.createSyncPaths = uniqueSortedStrings(tags.createSyncPaths)
+	tags.deleteSyncPaths = uniqueSortedStrings(tags.deleteSyncPaths)
 	tags.readPreloadPaths = uniqueSortedStrings(tags.readPreloadPaths)
 	tags.queryPreloadPaths = uniqueSortedStrings(tags.queryPreloadPaths)
 	tags.updatePreloadPaths = uniqueSortedStrings(tags.updatePreloadPaths)
@@ -212,6 +214,8 @@ func applySqlhSyncPhase(phase string, relationPath string, tags *entityBuilderTa
 	switch phase {
 	case "create":
 		tags.createSyncPaths = append(tags.createSyncPaths, relationPath)
+	case "delete":
+		tags.deleteSyncPaths = append(tags.deleteSyncPaths, relationPath)
 	case "update":
 		tags.updateSyncPaths = append(tags.updateSyncPaths, relationPath)
 	default:

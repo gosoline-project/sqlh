@@ -56,6 +56,12 @@ func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderQuery(qb *sqlr.QueryBuil
 	}
 }
 
+func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderDelete(qb *sqlr.QueryBuilderDelete) {
+	if builder, ok := r.transformer.(BuilderDeleteAware); ok {
+		builder.BuilderDelete(qb)
+	}
+}
+
 func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
 	if builder, ok := r.transformer.(BuilderUpdateReadAware); ok {
 		builder.BuilderUpdateRead(qb)

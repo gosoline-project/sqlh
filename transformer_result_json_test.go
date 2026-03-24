@@ -18,6 +18,7 @@ type testJsonInput struct{}
 type testJsonResultsTransformer struct {
 	builderCreateCalled      bool
 	builderReadCalled        bool
+	builderDeleteCalled      bool
 	builderUpdateReadCalled  bool
 	builderUpdateWriteCalled bool
 }
@@ -40,6 +41,10 @@ func (t *testJsonResultsTransformer) BuilderCreate(qb *sqlr.QueryBuilderCreate) 
 
 func (t *testJsonResultsTransformer) BuilderRead(qb *sqlr.QueryBuilderRead) {
 	t.builderReadCalled = true
+}
+
+func (t *testJsonResultsTransformer) BuilderDelete(qb *sqlr.QueryBuilderDelete) {
+	t.builderDeleteCalled = true
 }
 
 func (t *testJsonResultsTransformer) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
@@ -83,6 +88,11 @@ func TestNewJsonResultsTransformer_ForwardsBuilderAwareInterfaces(t *testing.T) 
 		t.Fatal("expected wrapped transformer to implement BuilderReadAware")
 	}
 
+	builderDelete, ok := transformer.(BuilderDeleteAware)
+	if !ok {
+		t.Fatal("expected wrapped transformer to implement BuilderDeleteAware")
+	}
+
 	builderUpdateRead, ok := transformer.(BuilderUpdateReadAware)
 	if !ok {
 		t.Fatal("expected wrapped transformer to implement BuilderUpdateReadAware")
@@ -95,6 +105,7 @@ func TestNewJsonResultsTransformer_ForwardsBuilderAwareInterfaces(t *testing.T) 
 
 	builderCreate.BuilderCreate(sqlr.NewQueryBuilderCreate())
 	builderRead.BuilderRead(sqlr.NewQueryBuilderRead())
+	builderDelete.BuilderDelete(sqlr.NewQueryBuilderDelete())
 	builderUpdateRead.BuilderUpdateRead(sqlr.NewQueryBuilderRead())
 	builderUpdateWrite.BuilderUpdateWrite(sqlr.NewQueryBuilderUpdate())
 
@@ -104,6 +115,10 @@ func TestNewJsonResultsTransformer_ForwardsBuilderAwareInterfaces(t *testing.T) 
 
 	if !wrapped.builderReadCalled {
 		t.Fatal("expected BuilderRead to be forwarded")
+	}
+
+	if !wrapped.builderDeleteCalled {
+		t.Fatal("expected BuilderDelete to be forwarded")
 	}
 
 	if !wrapped.builderUpdateReadCalled {
@@ -133,6 +148,11 @@ func TestNewJsonResultsTransformer_BuilderAwareInterfacesNoopWhenUnsupported(t *
 		t.Fatal("expected wrapped transformer to implement BuilderReadAware")
 	}
 
+	builderDelete, ok := transformer.(BuilderDeleteAware)
+	if !ok {
+		t.Fatal("expected wrapped transformer to implement BuilderDeleteAware")
+	}
+
 	builderUpdateRead, ok := transformer.(BuilderUpdateReadAware)
 	if !ok {
 		t.Fatal("expected wrapped transformer to implement BuilderUpdateReadAware")
@@ -145,6 +165,7 @@ func TestNewJsonResultsTransformer_BuilderAwareInterfacesNoopWhenUnsupported(t *
 
 	builderCreate.BuilderCreate(sqlr.NewQueryBuilderCreate())
 	builderRead.BuilderRead(sqlr.NewQueryBuilderRead())
+	builderDelete.BuilderDelete(sqlr.NewQueryBuilderDelete())
 	builderUpdateRead.BuilderUpdateRead(sqlr.NewQueryBuilderRead())
 	builderUpdateWrite.BuilderUpdateWrite(sqlr.NewQueryBuilderUpdate())
 }

@@ -44,6 +44,10 @@ type BuilderQueryAware interface {
 	BuilderQuery(qb *sqlr.QueryBuilderSelect)
 }
 
+type BuilderDeleteAware interface {
+	BuilderDelete(qb *sqlr.QueryBuilderDelete)
+}
+
 type BuilderUpdateReadAware interface {
 	BuilderUpdateRead(qb *sqlr.QueryBuilderRead)
 }
