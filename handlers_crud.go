@@ -232,7 +232,7 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 	var entity *E
 
 	if entity, err = h.repo.Read(ctx, id, h.builderUpdateRead); err != nil {
-		return nil, fmt.Errorf("failed to read entity with id %v: %w", id, err)
+		return nil, fmt.Errorf("failed to read entity before update with id %v: %w", id, err)
 	}
 
 	if entity, err = h.transformer.TransformUpdateInput(ctx, entity, input); err != nil {
@@ -241,6 +241,10 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 
 	if entity, err = h.repo.Update(ctx, entity, h.builderUpdateWrite); err != nil {
 		return nil, fmt.Errorf("failed to update entity with id %v: %w", id, err)
+	}
+
+	if entity, err = h.repo.Read(ctx, id, h.builderUpdateRead); err != nil {
+		return nil, fmt.Errorf("failed to read entity after update with id %v: %w", id, err)
 	}
 
 	return h.transformer.RenderEntityResponse(ctx, entity)

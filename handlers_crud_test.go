@@ -20,7 +20,7 @@ type crudTaggedItem struct {
 	ChildID int64             `db:"child_id"`
 	Name    string            `db:"name"`
 	Child   crudTaggedChild   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read,update"`
-	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:read;sync:create,update,delete"`
+	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:read,update;sync:create,update,delete"`
 }
 
 type crudTaggedQueryOnlyItem struct {

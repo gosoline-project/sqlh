@@ -254,8 +254,8 @@ github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3
 github.com/google/uuid v1.0.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/gosoline-project/httpserver v0.2.0 h1:bfBH+8vW0CvLaOrmSEc/qpc3HLmWbtuM9HVDYLWNtoU=
-github.com/gosoline-project/httpserver v0.2.0/go.mod h1:H2rA6PYHsqivz/2YltI0q599DTBtjisUPkqPUi9dcqM=
+github.com/gosoline-project/httpserver v0.2.1 h1:NfNobYFKCLikGknTokcbOi1kQRf3AjecwOHrX6vwZGo=
+github.com/gosoline-project/httpserver v0.2.1/go.mod h1:H2rA6PYHsqivz/2YltI0q599DTBtjisUPkqPUi9dcqM=
 github.com/gosoline-project/sqlc v0.3.0 h1:OAX4VbvyOpUJeffAWi44mn5oj+hk6e0UJTat+9DpTX8=
 github.com/gosoline-project/sqlc v0.3.0/go.mod h1:+LETSVlef2zw7SBg4Y0RR/jVaG1ZNItRxmQlLvTnkIA=
 github.com/gosoline-project/sqlr v0.6.0 h1:+2V8ZkKvKw53du7VCI7j87RDfl4cltyuOJOy9elpJLo=

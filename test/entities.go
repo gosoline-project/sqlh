@@ -17,7 +17,7 @@ type Post struct {
 	Title    string `db:"title"`
 	Status   string `db:"status"`
 	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,query"`
-	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags" sqlh:"preload:read,query;sync:create,update,delete"`
+	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags" sqlh:"preload:read,update,query;sync:create,update,delete"`
 }
 
 type Tag struct {
