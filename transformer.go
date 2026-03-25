@@ -32,26 +32,37 @@ type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] interface 
 	RenderQueryResponse(ctx context.Context, entity []E) (httpserver.Response, error)
 }
 
+// BuilderCreateAware augments the create builder used for
+// [sqlr.Repository.Create].
 type BuilderCreateAware interface {
 	BuilderCreate(qb *sqlr.QueryBuilderCreate)
 }
 
+// BuilderReadAware augments the read builder used for single-entity reads.
 type BuilderReadAware interface {
 	BuilderRead(qb *sqlr.QueryBuilderRead)
 }
 
+// BuilderQueryAware augments the select builder used for query/list requests.
 type BuilderQueryAware interface {
 	BuilderQuery(qb *sqlr.QueryBuilderSelect)
 }
 
+// BuilderDeleteAware augments the delete builder used for
+// [sqlr.Repository.Delete].
 type BuilderDeleteAware interface {
 	BuilderDelete(qb *sqlr.QueryBuilderDelete)
 }
 
+// BuilderUpdateReadAware augments the read builder used to load the existing
+// entity before [Transformer.TransformUpdateInput] runs.
 type BuilderUpdateReadAware interface {
 	BuilderUpdateRead(qb *sqlr.QueryBuilderRead)
 }
 
+// BuilderUpdateWriteAware augments the update builder used for
+// [sqlr.Repository.Update], including association sync and any post-update
+// preloads used to rehydrate the response entity.
 type BuilderUpdateWriteAware interface {
 	BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate)
 }

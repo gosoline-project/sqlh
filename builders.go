@@ -81,13 +81,18 @@ func builderUpdateReadFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuild
 }
 
 func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderUpdate) {
-	if tags == nil || len(tags.updateSyncPaths) == 0 {
+	if tags == nil || (len(tags.updateSyncPaths) == 0 && len(tags.updatePreloadPaths) == 0) {
 		return nil
 	}
 
+	preloadPaths := append([]string(nil), tags.updatePreloadPaths...)
 	paths := append([]string(nil), tags.updateSyncPaths...)
 
 	return func(qb *sqlr.QueryBuilderUpdate) {
+		for _, path := range preloadPaths {
+			qb.Preload(path)
+		}
+
 		qb.SyncAssociation(paths...)
 	}
 }

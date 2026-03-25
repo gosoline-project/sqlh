@@ -62,12 +62,16 @@ func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderDelete(qb *sqlr.QueryBui
 	}
 }
 
+// BuilderUpdateRead forwards pre-update read builder customization to the
+// wrapped transformer when supported.
 func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
 	if builder, ok := r.transformer.(BuilderUpdateReadAware); ok {
 		builder.BuilderUpdateRead(qb)
 	}
 }
 
+// BuilderUpdateWrite forwards update builder customization to the wrapped
+// transformer when supported.
 func (r resultsTransformerWrapper[K, E, IC, IU]) BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate) {
 	if builder, ok := r.transformer.(BuilderUpdateWriteAware); ok {
 		builder.BuilderUpdateWrite(qb)

@@ -225,8 +225,8 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleQuery(ctx context.Context, input *Inpu
 
 // HandleUpdate handles an update request. It reads the existing entity for id,
 // merges the input DTO via [Transformer.TransformUpdateInput], persists the
-// result, and returns the updated entity as an HTTP response via
-// [Transformer.RenderEntityResponse].
+// result, and returns the rehydrated entity from [sqlr.Repository.Update] as an
+// HTTP response via [Transformer.RenderEntityResponse].
 func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, input *IU) (httpserver.Response, error) {
 	var err error
 	var entity *E
@@ -241,10 +241,6 @@ func (h *HandlerCrud[K, E, IC, IU]) HandleUpdate(ctx context.Context, id K, inpu
 
 	if entity, err = h.repo.Update(ctx, entity, h.builderUpdateWrite); err != nil {
 		return nil, fmt.Errorf("failed to update entity with id %v: %w", id, err)
-	}
-
-	if entity, err = h.repo.Read(ctx, id, h.builderUpdateRead); err != nil {
-		return nil, fmt.Errorf("failed to read entity after update with id %v: %w", id, err)
 	}
 
 	return h.transformer.RenderEntityResponse(ctx, entity)
