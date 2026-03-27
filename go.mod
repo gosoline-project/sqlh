@@ -7,7 +7,7 @@ require (
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/gosoline-project/httpserver v0.2.1
 	github.com/gosoline-project/sqlc v0.3.0
-	github.com/gosoline-project/sqlr v0.8.1
+	github.com/gosoline-project/sqlr v0.8.2
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.57.2
 	github.com/spf13/cast v1.10.0
