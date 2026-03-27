@@ -7,7 +7,7 @@ require (
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/gosoline-project/httpserver v0.2.1
 	github.com/gosoline-project/sqlc v0.3.0
-	github.com/gosoline-project/sqlr v0.8.0
+	github.com/gosoline-project/sqlr v0.8.1
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.57.2
 	github.com/spf13/cast v1.10.0
@@ -157,6 +157,7 @@ require (
 	github.com/selm0/ladon v0.0.0-20231114080549-31144de4b38d // indirect
 	github.com/sethvargo/go-retry v0.2.4 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twmb/franz-go v1.20.3 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.16.1 // indirect
