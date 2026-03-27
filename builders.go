@@ -15,13 +15,18 @@ func composeBuilders[QB any](builders ...func(qb QB)) func(qb QB) {
 }
 
 func builderCreateFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderCreate) {
-	if tags == nil || len(tags.createSyncPaths) == 0 {
+	if tags == nil || (len(tags.createPreloadPaths) == 0 && len(tags.createSyncPaths) == 0) {
 		return nil
 	}
 
+	preloadPaths := append([]string(nil), tags.createPreloadPaths...)
 	paths := append([]string(nil), tags.createSyncPaths...)
 
 	return func(qb *sqlr.QueryBuilderCreate) {
+		for _, path := range preloadPaths {
+			qb.Preload(path)
+		}
+
 		qb.SyncAssociation(paths...)
 	}
 }

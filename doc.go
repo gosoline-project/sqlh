@@ -21,5 +21,5 @@
 //     provide a convenience implementation that renders entities as JSON
 //     without needing to construct [httpserver.Response] values manually.
 //     Association handling can be configured on relationship fields with
-//     `sqlh` tags such as `sqlh:"preload:read,query;sync:create,update,delete"`.
+//     `sqlh` tags such as `sqlh:"preload:create,read,query;sync:create,update,delete"`.
 package sqlh

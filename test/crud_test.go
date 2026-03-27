@@ -24,8 +24,7 @@ func TestCrudIntegrationTestSuite(t *testing.T) {
 type CrudIntegrationTestSuite struct {
 	suite.Suite
 
-	ctx  context.Context
-	repo sqlr.Repository[int64, Post]
+	ctx context.Context
 }
 
 func (s *CrudIntegrationTestSuite) SetupSuite() []suite.Option {
@@ -39,19 +38,13 @@ func (s *CrudIntegrationTestSuite) SetupSuite() []suite.Option {
 func (s *CrudIntegrationTestSuite) SetupTest() error {
 	s.ctx = s.Env().Context()
 
-	repo, err := sqlr.NewRepository[int64, Post](s.ctx, s.Env().Config(), s.Env().Logger(), "default")
-	if err != nil {
-		return err
-	}
-
-	s.repo = repo
-
 	return nil
 }
 
 func (s *CrudIntegrationTestSuite) SetupHttpServerRouter() gosolinehttpserver.RouterFactory {
 	return func(ctx context.Context, config cfg.Config, logger log.Logger, router *gosolinehttpserver.Router) error {
 		router.HandleWith(NewPostCrud())
+		router.HandleWith(NewMutationPreloadPostCrud())
 
 		return nil
 	}
@@ -279,8 +272,138 @@ func (s *CrudIntegrationTestSuite) TestDeletePost(app suite.AppUnderTest, client
 	return nil
 }
 
+func (s *CrudIntegrationTestSuite) TestCreatePostPreloadsTagsOnCreate(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output MutationPreloadPostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(MutationPreloadPostCreateInput{
+			AuthorID: 2,
+			Title:    "Create Preload Tags",
+			Status:   "draft",
+			Tags: []MutationPreloadPostInputTag{
+				{ID: 2},
+				{ID: 3},
+			},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPost, "/v1/preload-post")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.NotZero(output.ID)
+	s.Equal(MutationPreloadPostOutput{
+		ID:       output.ID,
+		AuthorID: 2,
+		Title:    "Create Preload Tags",
+		Status:   "draft",
+		Tags: []TagOutput{
+			{ID: 2, Name: "database"},
+			{ID: 3, Name: "testing"},
+		},
+		CreatedAt: output.CreatedAt,
+		UpdatedAt: output.UpdatedAt,
+	}, output)
+
+	stored, err := s.readPost(output.ID)
+	if err != nil {
+		return err
+	}
+
+	s.Equal(PostOutput{
+		ID:       output.ID,
+		AuthorID: 2,
+		Title:    "Create Preload Tags",
+		Status:   "draft",
+		Author: &AuthorOutput{
+			ID:   2,
+			Name: "Bob Smith",
+		},
+		Tags: []TagOutput{
+			{ID: 2, Name: "database"},
+			{ID: 3, Name: "testing"},
+		},
+		CreatedAt: stored.CreatedAt,
+		UpdatedAt: stored.UpdatedAt,
+	}, postOutputFromPost(stored))
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output MutationPreloadPostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(MutationPreloadPostUpdateInput{
+			AuthorID: 2,
+			Title:    "Updated Preload Tags",
+			Status:   "published",
+			Tags: []MutationPreloadPostInputTag{
+				{ID: 2},
+				{ID: 3},
+			},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPut, "/v1/preload-post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal(MutationPreloadPostOutput{
+		ID:       1,
+		AuthorID: 2,
+		Title:    "Updated Preload Tags",
+		Status:   "published",
+		Tags: []TagOutput{
+			{ID: 2, Name: "database"},
+			{ID: 3, Name: "testing"},
+		},
+		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+		UpdatedAt: output.UpdatedAt,
+	}, output)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Equal(PostOutput{
+		ID:       1,
+		AuthorID: 2,
+		Title:    "Updated Preload Tags",
+		Status:   "published",
+		Author: &AuthorOutput{
+			ID:   2,
+			Name: "Bob Smith",
+		},
+		Tags: []TagOutput{
+			{ID: 2, Name: "database"},
+			{ID: 3, Name: "testing"},
+		},
+		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+		UpdatedAt: stored.UpdatedAt,
+	}, postOutputFromPost(stored))
+
+	return nil
+}
+
 func (s *CrudIntegrationTestSuite) readPost(id int64) (*Post, error) {
-	return s.repo.Read(s.ctx, id, func(qb *sqlr.QueryBuilderRead) {
+	repo, err := sqlr.NewRepository[int64, Post](s.ctx, s.Env().Config(), s.Env().Logger(), "default")
+	if err != nil {
+		return nil, err
+	}
+
+	defer repo.Close() //nolint:errcheck // test helper best effort cleanup
+
+	return repo.Read(s.ctx, id, func(qb *sqlr.QueryBuilderRead) {
 		qb.Preload("Author")
 		qb.Preload("Tags")
 	})

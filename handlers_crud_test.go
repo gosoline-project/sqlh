@@ -6,7 +6,10 @@ import (
 	"testing"
 
 	"github.com/gosoline-project/httpserver"
+	sqlhmocks "github.com/gosoline-project/sqlh/mocks"
 	"github.com/gosoline-project/sqlr"
+	sqlrmocks "github.com/gosoline-project/sqlr/mocks"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,8 +22,8 @@ type crudTaggedItem struct {
 	sqlr.Entity[int64]
 	ChildID int64             `db:"child_id"`
 	Name    string            `db:"name"`
-	Child   crudTaggedChild   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read,update"`
-	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:read,update;sync:create,update,delete"`
+	Child   crudTaggedChild   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:create,read,update"`
+	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:create,read,update;sync:create,update,delete"`
 }
 
 type crudTaggedQueryOnlyItem struct {
@@ -62,6 +65,7 @@ type crudInterfaceTransformer struct {
 }
 
 func (t *crudInterfaceTransformer) BuilderCreate(qb *sqlr.QueryBuilderCreate) {
+	qb.Preload("ExtraCreate")
 	qb.SyncAssociation("Child")
 }
 
@@ -128,6 +132,7 @@ func TestHandlerCrud_TagBuildersApplyToCreateAndUpdate(t *testing.T) {
 	composeBuilders(builderUpdateReadFromTags(tags))(updateReadQB)
 	composeBuilders(builderUpdateWriteFromTags(tags))(updateWriteQB)
 
+	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromCreateBuilder(createQB))
 	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromCreateBuilder(createQB))
 	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromDeleteBuilder(deleteQB))
 	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromReadBuilder(updateReadQB))
@@ -155,6 +160,7 @@ func TestHandlerCrud_ComposesTagAndInterfaceBuilders(t *testing.T) {
 	composeBuilders(builderUpdateReadFromTags(tags), transformer.BuilderUpdateRead)(updateReadQB)
 	composeBuilders(builderUpdateWriteFromTags(tags), transformer.BuilderUpdateWrite)(updateWriteQB)
 
+	require.ElementsMatch(t, []string{"Child", "ExtraCreate", "Tags"}, preloadRelationsFromCreateBuilder(createQB))
 	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromCreateBuilder(createQB))
 	require.ElementsMatch(t, []string{"Child", "ExtraRead", "Tags"}, preloadRelationsFromReadBuilder(readQB))
 	require.Equal(t, []string{"ExtraQuery"}, preloadRelationsFromSelectBuilder(queryQB))
@@ -164,102 +170,133 @@ func TestHandlerCrud_ComposesTagAndInterfaceBuilders(t *testing.T) {
 	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromUpdateBuilder(updateWriteQB))
 }
 
-type recordingCrudRepo struct {
-	readEntity        *crudTaggedItem
-	updatedEntity     *crudTaggedItem
-	readCalls         int
-	updateReadPaths   []string
-	updateWritePaths  []string
-	updateWriteSyncs  []string
-	transformerEntity *crudTaggedItem
-}
+func TestHandlerCrud_HandleCreateUsesCreateRehydration(t *testing.T) {
+	tags, err := parseEntityBuilderTags[crudTaggedItem]()
+	require.NoError(t, err)
 
-func (r *recordingCrudRepo) Create(ctx context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderCreate)) error {
-	panic("unexpected Create call")
-}
+	createdEntity := &crudTaggedItem{
+		Entity: sqlr.Entity[int64]{Id: 1},
+		Name:   "created",
+		Child:  crudTaggedChild{Entity: sqlr.Entity[int64]{Id: 10}, Name: "child"},
+		Tags:   []crudTaggedChild{{Entity: sqlr.Entity[int64]{Id: 11}, Name: "tag"}},
+	}
+	repo := sqlrmocks.NewRepository[int64, crudTaggedItem](t)
+	transformer := sqlhmocks.NewTransformer[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput](t)
+	var createInputName string
+	var createPaths []string
+	var createSyncs []string
+	var transformerEntity *crudTaggedItem
+	var renderedEntity *crudTaggedItem
 
-func (r *recordingCrudRepo) Read(ctx context.Context, id int64, opts ...func(qb *sqlr.QueryBuilderRead)) (*crudTaggedItem, error) {
-	r.readCalls++
-	qb := sqlr.NewQueryBuilderRead()
-	for _, opt := range opts {
-		if opt != nil {
-			opt(qb)
-		}
+	transformer.EXPECT().
+		TransformCreateInput(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, input *crudTaggedCreateInput) (*crudTaggedItem, error) {
+			return &crudTaggedItem{Name: input.Name}, nil
+		})
+
+	repo.EXPECT().
+		Create(mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderCreate)) error {
+			qb := applyBuilderOptions(sqlr.NewQueryBuilderCreate(), opts)
+
+			transformerEntity = entity
+			createInputName = entity.Name
+			createPaths = preloadRelationsFromCreateBuilder(qb)
+			createSyncs = syncPathsFromCreateBuilder(qb)
+			*entity = *createdEntity
+
+			return nil
+		})
+
+	transformer.EXPECT().
+		RenderEntityResponse(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
+			renderedEntity = entity
+
+			return httpserver.NewStatusResponse(200), nil
+		})
+
+	handler := &HandlerCrud[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput]{
+		repo:          repo,
+		transformer:   transformer,
+		builderCreate: composeBuilders(builderCreateFromTags(tags)),
 	}
 
-	r.updateReadPaths = preloadRelationsFromReadBuilder(qb)
-
-	return r.readEntity, nil
-}
-
-func (r *recordingCrudRepo) Query(ctx context.Context, opts ...func(qb *sqlr.QueryBuilderSelect)) ([]crudTaggedItem, error) {
-	panic("unexpected Query call")
-}
-
-func (r *recordingCrudRepo) Update(ctx context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderUpdate)) (*crudTaggedItem, error) {
-	qb := sqlr.NewQueryBuilderUpdate()
-	for _, opt := range opts {
-		if opt != nil {
-			opt(qb)
-		}
-	}
-
-	r.transformerEntity = entity
-	r.updateWritePaths = preloadRelationsFromUpdateBuilder(qb)
-	r.updateWriteSyncs = syncPathsFromUpdateBuilder(qb)
-
-	return r.updatedEntity, nil
-}
-
-func (r *recordingCrudRepo) Delete(ctx context.Context, id int64, opts ...func(qb *sqlr.QueryBuilderDelete)) error {
-	panic("unexpected Delete call")
-}
-
-func (r *recordingCrudRepo) Close() error {
-	return nil
-}
-
-type recordingCrudTransformer struct {
-	renderedEntity *crudTaggedItem
-}
-
-func (t *recordingCrudTransformer) TransformCreateInput(ctx context.Context, input *crudTaggedCreateInput) (*crudTaggedItem, error) {
-	panic("unexpected TransformCreateInput call")
-}
-
-func (t *recordingCrudTransformer) TransformUpdateInput(ctx context.Context, entity *crudTaggedItem, input *crudTaggedUpdateInput) (*crudTaggedItem, error) {
-	entity.Name = input.Name
-
-	return entity, nil
-}
-
-func (t *recordingCrudTransformer) RenderEntityResponse(ctx context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
-	t.renderedEntity = entity
-
-	return httpserver.NewStatusResponse(200), nil
-}
-
-func (t *recordingCrudTransformer) RenderQueryResponse(ctx context.Context, entities []crudTaggedItem) (httpserver.Response, error) {
-	panic("unexpected RenderQueryResponse call")
+	_, err = handler.HandleCreate(context.Background(), &crudTaggedCreateInput{Name: "new"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"Child", "Tags"}, createPaths)
+	require.Equal(t, []string{"Tags"}, createSyncs)
+	require.Equal(t, "new", createInputName)
+	require.Equal(t, "created", transformerEntity.Name)
+	require.Same(t, transformerEntity, renderedEntity)
+	require.Equal(t, int64(1), renderedEntity.GetId())
+	require.Len(t, renderedEntity.Tags, 1)
 }
 
 func TestHandlerCrud_HandleUpdateUsesUpdateRehydration(t *testing.T) {
 	tags, err := parseEntityBuilderTags[crudTaggedItem]()
 	require.NoError(t, err)
 
-	repo := &recordingCrudRepo{
-		readEntity: &crudTaggedItem{
-			Entity: sqlr.Entity[int64]{Id: 1},
-			Name:   "before",
-		},
-		updatedEntity: &crudTaggedItem{
-			Entity: sqlr.Entity[int64]{Id: 1},
-			Name:   "after",
-			Child:  crudTaggedChild{Entity: sqlr.Entity[int64]{Id: 10}, Name: "child"},
-			Tags:   []crudTaggedChild{{Entity: sqlr.Entity[int64]{Id: 11}, Name: "tag"}},
-		},
+	readEntity := &crudTaggedItem{
+		Entity: sqlr.Entity[int64]{Id: 1},
+		Name:   "before",
 	}
-	transformer := &recordingCrudTransformer{}
+	updatedEntity := &crudTaggedItem{
+		Entity: sqlr.Entity[int64]{Id: 1},
+		Name:   "after",
+		Child:  crudTaggedChild{Entity: sqlr.Entity[int64]{Id: 10}, Name: "child"},
+		Tags:   []crudTaggedChild{{Entity: sqlr.Entity[int64]{Id: 11}, Name: "tag"}},
+	}
+	repo := sqlrmocks.NewRepository[int64, crudTaggedItem](t)
+	transformer := sqlhmocks.NewTransformer[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput](t)
+	var readCalls int
+	var updateReadPaths []string
+	var updateWritePaths []string
+	var updateWriteSyncs []string
+	var transformerEntity *crudTaggedItem
+	var renderedEntity *crudTaggedItem
+
+	transformer.EXPECT().
+		TransformUpdateInput(mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, input *crudTaggedUpdateInput) (*crudTaggedItem, error) {
+			entity.Name = input.Name
+
+			return entity, nil
+		})
+
+	repo.EXPECT().
+		Read(mock.Anything, int64(1), mock.Anything).
+		RunAndReturn(func(_ context.Context, _ int64, opts ...func(qb *sqlr.QueryBuilderRead)) (*crudTaggedItem, error) {
+			qb := applyBuilderOptions(sqlr.NewQueryBuilderRead(), opts)
+
+			readCalls++
+			updateReadPaths = preloadRelationsFromReadBuilder(qb)
+
+			return readEntity, nil
+		}).
+		Once()
+
+	repo.EXPECT().
+		Update(mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderUpdate)) (*crudTaggedItem, error) {
+			qb := applyBuilderOptions(sqlr.NewQueryBuilderUpdate(), opts)
+
+			transformerEntity = entity
+			updateWritePaths = preloadRelationsFromUpdateBuilder(qb)
+			updateWriteSyncs = syncPathsFromUpdateBuilder(qb)
+
+			return updatedEntity, nil
+		}).
+		Once()
+
+	transformer.EXPECT().
+		RenderEntityResponse(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
+			renderedEntity = entity
+
+			return httpserver.NewStatusResponse(200), nil
+		})
+
 	handler := &HandlerCrud[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput]{
 		repo:               repo,
 		transformer:        transformer,
@@ -269,16 +306,30 @@ func TestHandlerCrud_HandleUpdateUsesUpdateRehydration(t *testing.T) {
 
 	_, err = handler.HandleUpdate(context.Background(), 1, &crudTaggedUpdateInput{Name: "changed"})
 	require.NoError(t, err)
-	require.Equal(t, 1, repo.readCalls)
-	require.Equal(t, []string{"Child", "Tags"}, repo.updateReadPaths)
-	require.Equal(t, []string{"Child", "Tags"}, repo.updateWritePaths)
-	require.Equal(t, []string{"Tags"}, repo.updateWriteSyncs)
-	require.Same(t, repo.readEntity, repo.transformerEntity)
-	require.Equal(t, "changed", repo.transformerEntity.Name)
-	require.Same(t, repo.updatedEntity, transformer.renderedEntity)
+	require.Equal(t, 1, readCalls)
+	require.Equal(t, []string{"Child", "Tags"}, updateReadPaths)
+	require.Equal(t, []string{"Child", "Tags"}, updateWritePaths)
+	require.Equal(t, []string{"Tags"}, updateWriteSyncs)
+	require.Same(t, readEntity, transformerEntity)
+	require.Equal(t, "changed", transformerEntity.Name)
+	require.Same(t, updatedEntity, renderedEntity)
+}
+
+func applyBuilderOptions[T any](qb T, opts []func(T)) T {
+	for _, opt := range opts {
+		if opt != nil {
+			opt(qb)
+		}
+	}
+
+	return qb
 }
 
 func preloadRelationsFromReadBuilder(qb *sqlr.QueryBuilderRead) []string {
+	return preloadRelations(reflectValueField(qb, "preloads"))
+}
+
+func preloadRelationsFromCreateBuilder(qb *sqlr.QueryBuilderCreate) []string {
 	return preloadRelations(reflectValueField(qb, "preloads"))
 }
 

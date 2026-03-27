@@ -16,15 +16,15 @@ type tagNestedEntity struct {
 type tagChildEntity struct {
 	sqlr.Entity[int64]
 	ParentID int64             `db:"parent_id"`
-	Nested   []tagNestedEntity `db:"-" sqlr:"foreignKey:child_id" sqlh:"preload:read;sync:update"`
+	Nested   []tagNestedEntity `db:"-" sqlr:"foreignKey:child_id" sqlh:"preload:create,read;sync:update"`
 }
 
 type tagRootEntity struct {
 	sqlr.Entity[int64]
 	ChildID int64            `db:"child_id"`
 	Name    string           `db:"name"`
-	Child   tagChildEntity   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read,update"`
-	Tags    []tagChildEntity `db:"-" sqlr:"foreignKey:root_id" sqlh:"sync:create,update,delete"`
+	Child   tagChildEntity   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:create,read,update"`
+	Tags    []tagChildEntity `db:"-" sqlr:"foreignKey:root_id" sqlh:"preload:create;sync:create,update,delete"`
 	Created time.Time        `db:"created"`
 }
 
@@ -65,6 +65,7 @@ func TestParseEntityBuilderTags(t *testing.T) {
 	tags, err := parseEntityBuilderTags[tagRootEntity]()
 
 	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"Child", "Child.Nested", "Tags", "Tags.Nested"}, tags.createPreloadPaths)
 	require.Equal(t, []string{"Tags"}, tags.createSyncPaths)
 	require.Equal(t, []string{"Tags"}, tags.deleteSyncPaths)
 	require.ElementsMatch(t, []string{"Child", "Child.Nested", "Tags.Nested"}, tags.readPreloadPaths)
