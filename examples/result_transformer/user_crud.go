@@ -15,6 +15,7 @@ type (
 		Name string `json:"name"`
 	}
 	UserUpdateInput struct {
+		sqlh.InputByID[int]
 		Name string `json:"name"`
 	}
 	User struct {
@@ -33,12 +34,12 @@ type (
 
 // snippet-start: crud
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(0, "user", sqlh.NewJsonResultsTransformer[int, User, UserCreateInput, UserUpdateInput](&UserTransformer{}))
+	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput, UserOutput](&UserTransformer{}))
 }
 
 // snippet-end: crud
 
-var _ sqlh.JsonResultsTransformer[int, User, UserCreateInput, UserUpdateInput] = (*UserTransformer)(nil)
+var _ sqlh.Transformer[int, User, UserCreateInput, UserUpdateInput, UserOutput] = (*UserTransformer)(nil)
 
 // snippet-start: transformer
 type UserTransformer struct{}
@@ -55,7 +56,7 @@ func (t *UserTransformer) TransformUpdateInput(ctx context.Context, user *User, 
 	return user, nil
 }
 
-func (t *UserTransformer) TransformOutput(ctx context.Context, user *User) (any, error) {
+func (t *UserTransformer) TransformOutput(ctx context.Context, user *User) (UserOutput, error) {
 	return UserOutput{
 		Id:        user.Id,
 		Name:      user.Name,
