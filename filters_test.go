@@ -30,8 +30,8 @@ func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
 	require.Contains(t, query, "account_id")
 	require.ElementsMatch(t, []any{"active", 42}, params)
 
-	input.Limit = 10
-	input.Offset = 20
+	input.Page.Limit = 10
+	input.Page.Offset = 20
 	query, params, err = qb.ToSql()
 	require.NoError(t, err)
 	require.NotContains(t, query, "LIMIT")
@@ -40,7 +40,7 @@ func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
 }
 
 func TestListInputAppliesPaginationSeparately(t *testing.T) {
-	input := ListInput{Limit: 10, Offset: 20}
+	input := ListInput{Page: ListPage{Limit: 10, Offset: 20}}
 	qb := sqlr.NewQueryBuilderSelect()
 
 	input.ApplyPagination(qb)
@@ -62,7 +62,7 @@ func TestForceFiltersAreRequestLocalAndDefensive(t *testing.T) {
 }
 
 func TestListInputRejectsNegativePagination(t *testing.T) {
-	require.Error(t, (ListInput{Limit: -1}).ValidatePagination())
-	require.Error(t, (ListInput{Offset: -1}).ValidatePagination())
+	require.Error(t, (ListInput{Page: ListPage{Limit: -1}}).ValidatePagination())
+	require.Error(t, (ListInput{Page: ListPage{Offset: -1}}).ValidatePagination())
 	require.NoError(t, (ListInput{}).ValidatePagination())
 }

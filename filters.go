@@ -5,6 +5,7 @@ import (
 
 	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
+	"github.com/justtrackio/gosoline/pkg/validation"
 )
 
 // ForceFilter is a server-owned query restriction. SQLH applies every force
@@ -58,15 +59,20 @@ func (f ForceFilters) ForceFilters() []ForceFilter {
 	return f.filtersCopy()
 }
 
+// ListPage contains the limit and offset for a list request.
+type ListPage struct {
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
+}
+
 // ListInput is the standard SQLH list input. Applications can embed it in a
-// domain-specific input to retain the predefined filter, limit, offset, and
-// force-filter behavior.
+// domain-specific input to retain the predefined filter, page, and force-filter
+// behavior.
 type ListInput struct {
 	ForceFilters
 
 	Filter sqlc.JsonFilter `json:"filter"`
-	Limit  int             `json:"limit,omitempty"`
-	Offset int             `json:"offset,omitempty"`
+	Page   ListPage        `json:"page,omitempty"`
 }
 
 // GetForceFilters returns a copy of the server-owned filters carried by the list input.
@@ -94,26 +100,26 @@ func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 	return nil
 }
 
-// ApplyPagination applies the standard limit and offset fields.
+// ApplyPagination applies the standard page limit and offset fields.
 func (i ListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
 	if qb == nil {
 		return
 	}
-	if i.Limit > 0 {
-		qb.Limit(i.Limit)
+	if i.Page.Limit > 0 {
+		qb.Limit(i.Page.Limit)
 	}
-	if i.Offset > 0 {
-		qb.Offset(i.Offset)
+	if i.Page.Offset > 0 {
+		qb.Offset(i.Page.Offset)
 	}
 }
 
-// ValidatePagination validates the standard limit and offset fields.
+// ValidatePagination validates the standard page limit and offset fields.
 func (i ListInput) ValidatePagination() error {
-	if i.Limit < 0 {
-		return fmt.Errorf("limit must not be negative")
+	if i.Page.Limit < 0 {
+		return validation.NewError(fmt.Errorf("limit must not be negative"))
 	}
-	if i.Offset < 0 {
-		return fmt.Errorf("offset must not be negative")
+	if i.Page.Offset < 0 {
+		return validation.NewError(fmt.Errorf("offset must not be negative"))
 	}
 
 	return nil
