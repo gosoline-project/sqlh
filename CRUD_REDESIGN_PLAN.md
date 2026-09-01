@@ -97,10 +97,15 @@ The convenience function must accept operation-specific configuration for:
 The generic defaults use SQLR primary-key operations. Services can replace the
 identity, list, count, and delete behavior without replacing the whole handler.
 
+PATCH derives association paths from update-input JSON tags and update-sync
+relation names. Applications can configure `PatchAssociationTriggers` when
+scalar fields derive relation values. Triggers select relation synchronization
+but do not change merge-patch null handling.
+
 ## Generic list input
 
-SQLH provides a reusable list input containing predefined filter, limit, offset,
-and force-filter fields. It intentionally does not add order/order-by, page, or
+SQLH provides a reusable list input containing predefined filter, nested page,
+and force-filter fields. It intentionally does not add order/order-by or
 grouping fields until a concrete consumer requires their semantics; applications
 can embed or replace the input with domain-specific query behavior while
 retaining the force-filter contract.

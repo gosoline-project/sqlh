@@ -234,6 +234,19 @@ func buildPatchAssociationFields[IU any](syncPaths []string, overrides map[strin
 	return fields, nil
 }
 
+func buildPatchAssociationTriggers(syncPaths []string, triggers map[string]string) (map[string]string, error) {
+	result := make(map[string]string, len(triggers))
+	for patchPath, relationPath := range triggers {
+		if !containsAssociationPath(syncPaths, relationPath) {
+			return nil, fmt.Errorf("patch association trigger %q is not configured with sync:update", relationPath)
+		}
+
+		result[patchPath] = relationPath
+	}
+
+	return result, nil
+}
+
 func patchJSONPath[IU any](relationPath string) string {
 	segments := strings.Split(relationPath, ".")
 	result := make([]string, 0, len(segments))

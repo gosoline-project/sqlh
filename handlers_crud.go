@@ -130,11 +130,14 @@ type CrudDefinition[
 	// Output maps one persisted entity to the public response value.
 	Output func(context.Context, *E) (O, error)
 
-	// PatchAssociations maps JSON Merge Patch object paths to SQLR relation
+	// PatchAssociations maps JSON Merge Patch association paths to SQLR relation
 	// paths. When it is empty, SQLH derives JSON paths from the patch target's
 	// json tags and the entity relation names. Only paths also configured with
 	// sync:update are eligible for PATCH synchronization.
 	PatchAssociations map[string]string
+	// PatchAssociationTriggers maps non-association patch paths to relations
+	// whose derived values must be synchronized when those fields change.
+	PatchAssociationTriggers map[string]string
 
 	// Identity replaces the default primary-key lookup used by read, update,
 	// patch, and delete. The supplied scope must be applied by custom implementations.
@@ -242,16 +245,17 @@ type CRUD[
 	builderUpdateRead  func(*sqlr.QueryBuilderSelect)
 	builderUpdateWrite func(*sqlr.QueryBuilderUpdate)
 
-	patchAssociationFields map[string]string
-	patchPreloadPaths      []string
-	patchAutoSyncPaths     []string
-	patchOperation         TxOperation[PatchInput[ID], O]
-	createOperation        TxOperation[IC, O]
-	readOperation          TxOperation[InputByID[ID], O]
-	updateOperation        TxOperation[IU, O]
-	listOperation          TxOperation[LI, ListOutput[O]]
-	deleteOperation        TxOperation[InputByID[ID], httpserver.Response]
-	deleteTypedOperation   TxOperation[InputByID[ID], O]
+	patchAssociationFields   map[string]string
+	patchAssociationTriggers map[string]string
+	patchPreloadPaths        []string
+	patchAutoSyncPaths       []string
+	patchOperation           TxOperation[PatchInput[ID], O]
+	createOperation          TxOperation[IC, O]
+	readOperation            TxOperation[InputByID[ID], O]
+	updateOperation          TxOperation[IU, O]
+	listOperation            TxOperation[LI, ListOutput[O]]
+	deleteOperation          TxOperation[InputByID[ID], httpserver.Response]
+	deleteTypedOperation     TxOperation[InputByID[ID], O]
 }
 
 // NewCRUD creates a handler factory for a typed CRUD definition.
@@ -342,19 +346,24 @@ func newCRUD[
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure patch associations: %w", err)
 	}
+	patchAssociationTriggers, err := buildPatchAssociationTriggers(tags.updateSyncPaths, definition.PatchAssociationTriggers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure patch association triggers: %w", err)
+	}
 
 	patchAutoSyncPaths := append([]string(nil), schema.AutoSyncUpdatePaths()...)
 	patchAutoSyncPaths = append(patchAutoSyncPaths, schema.AutoSyncMany2manyPaths()...)
 	patchAutoSyncPaths = uniqueSortedStrings(patchAutoSyncPaths)
 
 	handler := &CRUD[K, E, ID, IC, IU, LI, O]{
-		repository:             repository,
-		runner:                 runner,
-		schema:                 schema,
-		definition:             definition,
-		patchAssociationFields: patchAssociationFields,
-		patchPreloadPaths:      append([]string(nil), tags.updatePreloadPaths...),
-		patchAutoSyncPaths:     patchAutoSyncPaths,
+		repository:               repository,
+		runner:                   runner,
+		schema:                   schema,
+		definition:               definition,
+		patchAssociationFields:   patchAssociationFields,
+		patchAssociationTriggers: patchAssociationTriggers,
+		patchPreloadPaths:        append([]string(nil), tags.updatePreloadPaths...),
+		patchAutoSyncPaths:       patchAutoSyncPaths,
 		builderCreate: composeBuilders(
 			builderCreateFromTags(tags),
 			definition.BuilderCreate,
@@ -683,6 +692,8 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) patch(ctx context.Context, tx sqlr.TTx, 
 	}
 
 	selectedPaths := selectPatchAssociationPaths(document, h.patchAssociationFields)
+	selectedPaths = append(selectedPaths, selectPatchAssociationPaths(document, h.patchAssociationTriggers)...)
+	selectedPaths = uniqueSortedStrings(selectedPaths)
 	if err = normalizePatchAssociationNulls(entity, document, h.patchAssociationFields, selectedPaths); err != nil {
 		return zero, fmt.Errorf("failed to normalize patched associations: %w", err)
 	}
