@@ -55,14 +55,14 @@
 // PUT. The default PATCH operation uses this sequence:
 //
 //   - load the entity with update preloads and lookup scopes;
-//   - call [CrudDefinition.PatchBaseline] to build a complete update input;
-//   - merge the request document into that baseline;
+//   - call [CrudDefinition.PatchInputFromEntity] to build a complete update input;
+//   - merge the request document into that input;
 //   - call [CrudDefinition.UpdateInput] with the merged complete input;
 //   - persist the entity and only the associations selected by the request;
 //   - map the persisted entity to output and commit the transaction.
 //
-// A patch baseline must contain every writable value that an omitted field must
-// preserve. SQLH retains the original document separately from the merged
+// PatchInputFromEntity must return every writable value that an omitted field
+// must preserve. SQLH retains the original document separately from the merged
 // input, so it can distinguish an omitted field from an explicitly supplied
 // zero value or null. JSON Merge Patch replaces arrays as complete values.
 // For direct association fields, null and an empty array both clear the
@@ -71,7 +71,7 @@
 // SQLH derives direct association mappings from update-input JSON paths and
 // entity relation names. Only relations configured with sqlh sync:update are
 // eligible for PATCH synchronization. An omitted association is not
-// synchronized merely because it exists in the complete baseline.
+// synchronized merely because it exists in the complete update input.
 //
 // [CrudDefinition.PatchAssociationTriggers] handles indirect association
 // changes. Each map key is a JSON path in the original patch document. Each map

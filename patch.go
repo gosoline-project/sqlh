@@ -115,22 +115,22 @@ func (d PatchDocument) isEmptyArray(path string) bool {
 	return len(values) == 0
 }
 
-// MergeInto applies the JSON Merge Patch to baseline using RFC 7396 semantics.
-// The baseline must be a non-nil pointer to a complete update input. Fields
-// omitted from the patch retain their baseline values.
-func (d PatchDocument) MergeInto(baseline any) error {
+// MergeInto applies the JSON Merge Patch to completeInput using RFC 7396
+// semantics. The complete input must be a non-nil pointer and must contain all
+// values that an omitted patch field must preserve.
+func (d PatchDocument) MergeInto(completeInput any) error {
 	if len(d.raw) == 0 {
 		return fmt.Errorf("patch document is empty")
 	}
 
-	value := reflect.ValueOf(baseline)
+	value := reflect.ValueOf(completeInput)
 	if !value.IsValid() || value.Kind() != reflect.Pointer || value.IsNil() {
-		return fmt.Errorf("patch baseline must be a non-nil pointer")
+		return fmt.Errorf("complete patch input must be a non-nil pointer")
 	}
 
-	before, err := json.Marshal(baseline)
+	before, err := json.Marshal(completeInput)
 	if err != nil {
-		return fmt.Errorf("failed to marshal patch baseline: %w", err)
+		return fmt.Errorf("failed to marshal complete patch input: %w", err)
 	}
 
 	after, err := jsonpatch.MergePatch(before, d.raw)
@@ -138,15 +138,15 @@ func (d PatchDocument) MergeInto(baseline any) error {
 		return fmt.Errorf("failed to apply JSON Merge Patch: %w", err)
 	}
 
-	resetPatchBaseline(value.Elem())
-	if err = json.Unmarshal(after, baseline); err != nil {
-		return fmt.Errorf("failed to unmarshal merged patch baseline: %w", err)
+	resetPatchInput(value.Elem())
+	if err = json.Unmarshal(after, completeInput); err != nil {
+		return fmt.Errorf("failed to unmarshal merged patch input: %w", err)
 	}
 
 	return nil
 }
 
-func resetPatchBaseline(value reflect.Value) {
+func resetPatchInput(value reflect.Value) {
 	if !value.IsValid() {
 		return
 	}
@@ -154,7 +154,7 @@ func resetPatchBaseline(value reflect.Value) {
 		if value.IsNil() {
 			return
 		}
-		resetPatchBaseline(value.Elem())
+		resetPatchInput(value.Elem())
 
 		return
 	}
@@ -175,7 +175,7 @@ func resetPatchBaseline(value reflect.Value) {
 			continue
 		}
 		if structField.Anonymous && jsonName == lowerCamel(structField.Name) {
-			resetPatchBaseline(field)
+			resetPatchInput(field)
 
 			continue
 		}

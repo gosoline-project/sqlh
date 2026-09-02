@@ -99,14 +99,15 @@ The convenience function must accept operation-specific configuration for:
 The generic defaults use SQLR primary-key operations. Services can replace the
 identity, list, count, and delete behavior without replacing the whole handler.
 
-PATCH uses `PatchBaseline` to create a complete update input, merges the JSON
-Merge Patch document into it, and passes the result to `UpdateInput`. It derives
-direct association paths from update-input JSON tags and update-sync relation
-names. Applications can configure `PatchAssociationTriggers` when scalar fields
-cause `UpdateInput` to derive relation values. Trigger keys are JSON paths from
-the original patch document. Trigger values are entity relations configured with
-`sync:update`. Triggers select relation synchronization but do not mutate values
-or change merge-patch null handling.
+PATCH uses `PatchInputFromEntity` to map the loaded entity to a complete
+update input, merges the JSON Merge Patch document into that input, and passes
+the result to `UpdateInput`. It derives direct association paths from
+update-input JSON tags and update-sync relation names. Applications can
+configure `PatchAssociationTriggers` when scalar fields cause `UpdateInput` to
+derive relation values. Trigger keys are JSON paths from the original patch
+document. Trigger values are entity relations configured with `sync:update`.
+Triggers select relation synchronization but do not mutate values or change
+merge-patch null handling.
 
 ## Generic list input
 

@@ -121,19 +121,20 @@ type CrudDefinition[
 	CreateInput func(context.Context, *IC) (*E, error)
 	// UpdateInput applies a complete update input to an entity loaded by the
 	// scoped identity lookup. The default PUT operation passes the bound input.
-	// The default PATCH operation passes the complete input after it merges the
-	// request document into PatchBaseline.
+	// The default PATCH operation passes the input returned by
+	// PatchInputFromEntity after it merges the request document.
 	UpdateInput func(context.Context, *E, *IU) (*E, error)
-	// PatchBaseline creates the complete update input used as the JSON Merge
-	// Patch base. Fields omitted from the request retain their baseline values.
-	PatchBaseline func(context.Context, *E) (*IU, error)
+	// PatchInputFromEntity maps a loaded entity to the complete update input into
+	// which SQLH merges the JSON Merge Patch document. Fields omitted from the
+	// request retain their current values.
+	PatchInputFromEntity func(context.Context, *E) (*IU, error)
 	// Output maps one persisted entity to the public response value.
 	Output func(context.Context, *E) (O, error)
 
 	// PatchAssociations maps JSON Merge Patch association paths to SQLR relation
-	// paths. When it is empty, SQLH derives JSON paths from the patch baseline's
-	// json tags and the entity relation names. Only paths also configured with
-	// sync:update are eligible for PATCH synchronization.
+	// paths. When it is empty, SQLH derives JSON paths from the complete update
+	// input's json tags and the entity relation names. Only paths also configured
+	// with sync:update are eligible for PATCH synchronization.
 	PatchAssociations map[string]string
 	// PatchAssociationTriggers maps non-association JSON paths in the original
 	// patch document to entity relation paths whose derived values UpdateInput
@@ -470,7 +471,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) configurePatchOperation() error {
 
 		return nil
 	}
-	if h.definition.PatchBaseline == nil {
+	if h.definition.PatchInputFromEntity == nil {
 		return nil
 	}
 	if h.definition.UpdateInput == nil {
@@ -540,7 +541,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits. It is available when the CRUD
-// definition configures PatchBaseline or PatchOperation.
+// definition configures PatchInputFromEntity or PatchOperation.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
 	return RunValue(ctx, h.runner, input, h.patchOperation)
 }
@@ -670,19 +671,19 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) patch(ctx context.Context, tx sqlr.TTx, 
 		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.ID, err)
 	}
 
-	baseline, err := h.definition.PatchBaseline(ctx, entity)
+	completeInput, err := h.definition.PatchInputFromEntity(ctx, entity)
 	if err != nil {
-		return zero, fmt.Errorf("failed to create patch baseline: %w", err)
+		return zero, fmt.Errorf("failed to create patch input from entity: %w", err)
 	}
-	if baseline == nil {
-		return zero, fmt.Errorf("patch baseline mapper returned a nil input")
+	if completeInput == nil {
+		return zero, fmt.Errorf("patch input from entity mapper returned nil")
 	}
 
-	if err = document.MergeInto(baseline); err != nil {
+	if err = document.MergeInto(completeInput); err != nil {
 		return zero, fmt.Errorf("failed to apply patch: %w", err)
 	}
 
-	entity, err = h.definition.UpdateInput(ctx, entity, baseline)
+	entity, err = h.definition.UpdateInput(ctx, entity, completeInput)
 	if err != nil {
 		return zero, fmt.Errorf("failed to transform merged patch input: %w", err)
 	}
@@ -933,7 +934,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) lookupScope(source ForceFilterSource) Qu
 
 // WithCrudHandlers registers the standard create, read, update, delete, and
 // list routes for a typed CRUD handler. It also registers PATCH when the
-// definition configures PatchBaseline or PatchOperation.
+// definition configures PatchInputFromEntity or PatchOperation.
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
