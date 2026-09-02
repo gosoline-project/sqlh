@@ -6,8 +6,8 @@ require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/gosoline-project/httpserver v0.6.0
-	github.com/gosoline-project/sqlc v0.3.0
-	github.com/gosoline-project/sqlr v0.8.2
+	github.com/gosoline-project/sqlc v0.3.1-0.20260902151518-99169f292f56
+	github.com/gosoline-project/sqlr v0.8.3-0.20260902151912-36c90c9ed7e2
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.63.5
 	github.com/stretchr/testify v1.11.1

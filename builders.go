@@ -128,6 +128,10 @@ func builderLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSe
 	}
 }
 
+func builderForUpdate(qb *sqlr.QueryBuilderSelect) {
+	qb.ForUpdate()
+}
+
 // builderUpdateLookupFromTags returns preload options for the select-based
 // lookup performed before an update.
 func builderUpdateLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
