@@ -134,7 +134,7 @@ func (t *PostTransformer) TransformUpdateInput(_ context.Context, post *Post, in
 	return post, nil
 }
 
-func (t *PostTransformer) TransformPatchTarget(_ context.Context, post *Post) (*PostUpdateInput, error) {
+func (t *PostTransformer) TransformPatchBaseline(_ context.Context, post *Post) (*PostUpdateInput, error) {
 	tags := make([]PostInputTag, len(post.Tags))
 	for i, tag := range post.Tags {
 		tags[i] = PostInputTag{ID: tag.Id, Name: tag.Name}
@@ -147,15 +147,6 @@ func (t *PostTransformer) TransformPatchTarget(_ context.Context, post *Post) (*
 		Status:    post.Status,
 		Tags:      tags,
 	}, nil
-}
-
-func (t *PostTransformer) TransformPatch(_ context.Context, post *Post, input *PostUpdateInput) (*Post, error) {
-	post.AuthorID = input.AuthorID
-	post.Title = input.Title
-	post.Status = input.Status
-	post.Tags = inputTagsToTags(input.Tags)
-
-	return post, nil
 }
 
 func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (PostOutput, error) {

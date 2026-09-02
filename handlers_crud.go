@@ -119,24 +119,26 @@ type CrudDefinition[
 ] struct {
 	// CreateInput maps a create request into a new entity.
 	CreateInput func(context.Context, *IC) (*E, error)
-	// UpdateInput applies an update request to an entity loaded by the scoped
-	// identity lookup.
+	// UpdateInput applies a complete update input to an entity loaded by the
+	// scoped identity lookup. The default PUT operation passes the bound input.
+	// The default PATCH operation passes the complete input after it merges the
+	// request document into PatchBaseline.
 	UpdateInput func(context.Context, *E, *IU) (*E, error)
-	// PatchTarget creates the complete update target to which SQLH applies the
-	// JSON Merge Patch document.
-	PatchTarget func(context.Context, *E) (*IU, error)
-	// PatchApply applies the merged patch target to the loaded entity.
-	PatchApply func(context.Context, *E, *IU) (*E, error)
+	// PatchBaseline creates the complete update input used as the JSON Merge
+	// Patch base. Fields omitted from the request retain their baseline values.
+	PatchBaseline func(context.Context, *E) (*IU, error)
 	// Output maps one persisted entity to the public response value.
 	Output func(context.Context, *E) (O, error)
 
 	// PatchAssociations maps JSON Merge Patch association paths to SQLR relation
-	// paths. When it is empty, SQLH derives JSON paths from the patch target's
+	// paths. When it is empty, SQLH derives JSON paths from the patch baseline's
 	// json tags and the entity relation names. Only paths also configured with
 	// sync:update are eligible for PATCH synchronization.
 	PatchAssociations map[string]string
-	// PatchAssociationTriggers maps non-association patch paths to relations
-	// whose derived values must be synchronized when those fields change.
+	// PatchAssociationTriggers maps non-association JSON paths in the original
+	// patch document to entity relation paths whose derived values UpdateInput
+	// changes. A trigger only selects the relation for persistence. The relation
+	// must be configured with sync:update.
 	PatchAssociationTriggers map[string]string
 
 	// Identity replaces the default primary-key lookup used by read, update,
@@ -468,14 +470,11 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) configurePatchOperation() error {
 
 		return nil
 	}
-	if h.definition.PatchTarget == nil && h.definition.PatchApply == nil {
+	if h.definition.PatchBaseline == nil {
 		return nil
 	}
-	if h.definition.PatchTarget == nil {
-		return fmt.Errorf("CRUD patch target mapper is required")
-	}
-	if h.definition.PatchApply == nil {
-		return fmt.Errorf("CRUD patch apply mapper is required")
+	if h.definition.UpdateInput == nil {
+		return fmt.Errorf("CRUD update input mapper is required for default patch operation")
 	}
 	if h.definition.Output == nil {
 		return fmt.Errorf("CRUD output mapper is required")
@@ -541,7 +540,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits. It is available when the CRUD
-// definition configures PatchTarget and PatchApply or PatchOperation.
+// definition configures PatchBaseline or PatchOperation.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
 	return RunValue(ctx, h.runner, input, h.patchOperation)
 }
@@ -671,24 +670,24 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) patch(ctx context.Context, tx sqlr.TTx, 
 		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.ID, err)
 	}
 
-	target, err := h.definition.PatchTarget(ctx, entity)
+	baseline, err := h.definition.PatchBaseline(ctx, entity)
 	if err != nil {
-		return zero, fmt.Errorf("failed to create patch target: %w", err)
+		return zero, fmt.Errorf("failed to create patch baseline: %w", err)
 	}
-	if target == nil {
-		return zero, fmt.Errorf("patch target mapper returned a nil target")
+	if baseline == nil {
+		return zero, fmt.Errorf("patch baseline mapper returned a nil input")
 	}
 
-	if err = document.MergeInto(target); err != nil {
+	if err = document.MergeInto(baseline); err != nil {
 		return zero, fmt.Errorf("failed to apply patch: %w", err)
 	}
 
-	entity, err = h.definition.PatchApply(ctx, entity, target)
+	entity, err = h.definition.UpdateInput(ctx, entity, baseline)
 	if err != nil {
-		return zero, fmt.Errorf("failed to apply patched target: %w", err)
+		return zero, fmt.Errorf("failed to transform merged patch input: %w", err)
 	}
 	if entity == nil {
-		return zero, fmt.Errorf("patch apply mapper returned a nil entity")
+		return zero, fmt.Errorf("update input mapper returned a nil entity")
 	}
 
 	selectedPaths := selectPatchAssociationPaths(document, h.patchAssociationFields)
@@ -934,7 +933,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) lookupScope(source ForceFilterSource) Qu
 
 // WithCrudHandlers registers the standard create, read, update, delete, and
 // list routes for a typed CRUD handler. It also registers PATCH when the
-// definition configures PatchTarget and PatchApply or PatchOperation.
+// definition configures PatchBaseline or PatchOperation.
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],

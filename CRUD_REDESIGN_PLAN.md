@@ -52,9 +52,10 @@ or identity inputs. Force filters are server-owned query restrictions and are no
 bound from HTTP input.
 
 An application authz policy can use its `Before` hook to add a force filter while
-also returning the corresponding authorization check. SQLH applies the filters as
-mandatory predicates to list, count, identity lookup, update lookup, and delete
-lookup.
+also returning the corresponding authorization check. Default SQLH operations
+apply the filters as mandatory predicates to list, count, identity lookup, update
+lookup, and delete lookup. Custom query and count callbacks must apply the
+provided `QueryPlan.ApplyScope` function.
 
 Force filters:
 
@@ -81,6 +82,7 @@ The standard convenience routes are:
 - `POST /v{version}/{entity}`
 - `GET /v{version}/{entity}/:id`
 - `PUT /v{version}/{entity}/:id`
+- `PATCH /v{version}/{entity}/:id` when PATCH is configured
 - `DELETE /v{version}/{entity}/:id`
 - `POST /v{version}/{plural-entity}`
 
@@ -97,10 +99,14 @@ The convenience function must accept operation-specific configuration for:
 The generic defaults use SQLR primary-key operations. Services can replace the
 identity, list, count, and delete behavior without replacing the whole handler.
 
-PATCH derives association paths from update-input JSON tags and update-sync
-relation names. Applications can configure `PatchAssociationTriggers` when
-scalar fields derive relation values. Triggers select relation synchronization
-but do not change merge-patch null handling.
+PATCH uses `PatchBaseline` to create a complete update input, merges the JSON
+Merge Patch document into it, and passes the result to `UpdateInput`. It derives
+direct association paths from update-input JSON tags and update-sync relation
+names. Applications can configure `PatchAssociationTriggers` when scalar fields
+cause `UpdateInput` to derive relation values. Trigger keys are JSON paths from
+the original patch document. Trigger values are entity relations configured with
+`sync:update`. Triggers select relation synchronization but do not mutate values
+or change merge-patch null handling.
 
 ## Generic list input
 
@@ -170,4 +176,4 @@ golangci-lint run
 ```
 
 No files in `backend.experiment-service` are part of this work.
-The plan file itself is intentionally uncommitted.
+The plan remains in the branch for review and will be removed separately.
