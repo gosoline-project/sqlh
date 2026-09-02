@@ -115,21 +115,22 @@ func (d PatchDocument) isEmptyArray(path string) bool {
 	return len(values) == 0
 }
 
-// MergeInto applies the JSON Merge Patch to target using RFC 7396 semantics.
-// The target must be a non-nil pointer.
-func (d PatchDocument) MergeInto(target any) error {
+// MergeInto applies the JSON Merge Patch to baseline using RFC 7396 semantics.
+// The baseline must be a non-nil pointer to a complete update input. Fields
+// omitted from the patch retain their baseline values.
+func (d PatchDocument) MergeInto(baseline any) error {
 	if len(d.raw) == 0 {
 		return fmt.Errorf("patch document is empty")
 	}
 
-	value := reflect.ValueOf(target)
+	value := reflect.ValueOf(baseline)
 	if !value.IsValid() || value.Kind() != reflect.Pointer || value.IsNil() {
-		return fmt.Errorf("patch target must be a non-nil pointer")
+		return fmt.Errorf("patch baseline must be a non-nil pointer")
 	}
 
-	before, err := json.Marshal(target)
+	before, err := json.Marshal(baseline)
 	if err != nil {
-		return fmt.Errorf("failed to marshal patch target: %w", err)
+		return fmt.Errorf("failed to marshal patch baseline: %w", err)
 	}
 
 	after, err := jsonpatch.MergePatch(before, d.raw)
@@ -137,15 +138,15 @@ func (d PatchDocument) MergeInto(target any) error {
 		return fmt.Errorf("failed to apply JSON Merge Patch: %w", err)
 	}
 
-	resetPatchTarget(value.Elem())
-	if err = json.Unmarshal(after, target); err != nil {
-		return fmt.Errorf("failed to unmarshal merged patch target: %w", err)
+	resetPatchBaseline(value.Elem())
+	if err = json.Unmarshal(after, baseline); err != nil {
+		return fmt.Errorf("failed to unmarshal merged patch baseline: %w", err)
 	}
 
 	return nil
 }
 
-func resetPatchTarget(value reflect.Value) {
+func resetPatchBaseline(value reflect.Value) {
 	if !value.IsValid() {
 		return
 	}
@@ -153,7 +154,7 @@ func resetPatchTarget(value reflect.Value) {
 		if value.IsNil() {
 			return
 		}
-		resetPatchTarget(value.Elem())
+		resetPatchBaseline(value.Elem())
 
 		return
 	}
@@ -174,7 +175,7 @@ func resetPatchTarget(value reflect.Value) {
 			continue
 		}
 		if structField.Anonymous && jsonName == lowerCamel(structField.Name) {
-			resetPatchTarget(field)
+			resetPatchBaseline(field)
 
 			continue
 		}

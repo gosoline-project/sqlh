@@ -18,11 +18,11 @@ type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU Identified[K], 
 }
 
 // PatchTransformer optionally adds JSON Merge Patch support to a CRUD
-// transformer. The patch target is a complete update representation. SQLH
-// applies the request document to that target before calling TransformPatch.
+// transformer. TransformPatchBaseline returns the complete update input used
+// as the merge base. SQLH applies the request document to that baseline and
+// passes the result to [Transformer.TransformUpdateInput].
 type PatchTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IU Identified[K]] interface {
-	TransformPatchTarget(ctx context.Context, entity *E) (*IU, error)
-	TransformPatch(ctx context.Context, entity *E, target *IU) (*E, error)
+	TransformPatchBaseline(ctx context.Context, entity *E) (*IU, error)
 }
 
 // TransformerFactory constructs a Transformer during application startup.
@@ -90,8 +90,7 @@ func NewCrudDefinitionFromTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC an
 		definition.BuilderUpdateWrite = builder.BuilderUpdateWrite
 	}
 	if patchTransformer, ok := transformer.(PatchTransformer[K, E, IU]); ok {
-		definition.PatchTarget = patchTransformer.TransformPatchTarget
-		definition.PatchApply = patchTransformer.TransformPatch
+		definition.PatchBaseline = patchTransformer.TransformPatchBaseline
 	}
 
 	return definition

@@ -161,16 +161,11 @@ func TestCRUDPatchAppliesMergePatchInTransaction(t *testing.T) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
 	)
-	definition.PatchTarget = func(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
+	definition.PatchBaseline = func(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
 		return &crudTestUpdateInput{
 			InputByID: InputByID[int]{ID: entity.Id},
 			Name:      entity.Name,
 		}, nil
-	}
-	definition.PatchApply = func(_ context.Context, entity *crudTestEntity, input *crudTestUpdateInput) (*crudTestEntity, error) {
-		entity.Name = input.Name
-
-		return entity, nil
 	}
 
 	handler, err := newCRUD(repository, runner, schema, definition)
