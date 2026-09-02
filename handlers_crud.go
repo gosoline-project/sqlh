@@ -386,6 +386,7 @@ func newCRUD[
 		builderUpdateRead: composeBuilders(
 			builderUpdateLookupFromTags(tags),
 			definition.BuilderUpdateRead,
+			builderForUpdate,
 		),
 		builderUpdateWrite: composeBuilders(
 			builderUpdateWriteFromTags(tags),
