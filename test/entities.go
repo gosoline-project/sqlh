@@ -134,7 +134,7 @@ func (t *PostTransformer) TransformUpdateInput(_ context.Context, post *Post, in
 	return post, nil
 }
 
-func (t *PostTransformer) TransformPatchBaseline(_ context.Context, post *Post) (*PostUpdateInput, error) {
+func (t *PostTransformer) TransformPatchInputFromEntity(_ context.Context, post *Post) (*PostUpdateInput, error) {
 	tags := make([]PostInputTag, len(post.Tags))
 	for i, tag := range post.Tags {
 		tags[i] = PostInputTag{ID: tag.Id, Name: tag.Name}
