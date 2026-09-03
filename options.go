@@ -22,10 +22,8 @@ type handlerOptions[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 
 func newOpts[K sqlr.KeyTypes, E sqlr.Entitier[K]]() *handlerOptions[K, E] {
 	return &handlerOptions[K, E]{
-		clientName: "default",
-		repositoryFactory: func(client sqlc.Client, settings sqlr.Settings) (sqlr.RepositoryTx[K, E], error) {
-			return sqlr.NewRepositoryTxWithSettings[K, E](client, settings)
-		},
+		clientName:        "default",
+		repositoryFactory: sqlr.NewRepositoryTxWithSettings[K, E],
 	}
 }
 
