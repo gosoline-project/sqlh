@@ -236,7 +236,7 @@ type CRUD[
 	LI ListInputSource,
 	O any,
 ] struct {
-	repository sqlr.RepositoryTx[K, E]
+	repository sqlr.CountingRepositoryTx[K, E]
 	runner     *TxRunner
 	schema     *sqlr.EntitySchema
 	definition CrudDefinition[K, E, ID, IC, IU, LI, O]
@@ -329,7 +329,7 @@ func newCRUD[
 	IU Identified[ID],
 	LI ListInputSource,
 	O any,
-](repository sqlr.RepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CRUD[K, E, ID, IC, IU, LI, O], error) {
+](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CRUD[K, E, ID, IC, IU, LI, O], error) {
 	if repository == nil {
 		return nil, fmt.Errorf("transaction repository is required")
 	}
@@ -765,7 +765,7 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) list(ctx context.Context, tx sqlr.TTx, i
 	if h.definition.Count != nil {
 		total, err = h.definition.Count(ctx, tx, h.repository, input, plan)
 	} else {
-		total, err = h.count(ctx, tx, plan)
+		total, err = h.count(tx, plan)
 	}
 	if err != nil {
 		return ListOutput[O]{}, fmt.Errorf("failed to count entities: %w", err)
@@ -781,34 +781,14 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) list(ctx context.Context, tx sqlr.TTx, i
 	return ListOutput[O]{Results: results, Total: total}, nil
 }
 
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) count(ctx context.Context, tx sqlr.TTx, plan QueryPlan) (int, error) {
+func (h *CRUD[K, E, ID, IC, IU, LI, O]) count(tx sqlr.TTx, plan QueryPlan) (int, error) {
 	qb := sqlr.NewQueryBuilderSelect()
 	plan.ApplyBuilder(qb)
 	if err := plan.ApplyScope(qb); err != nil {
 		return 0, err
 	}
 
-	clauses, params, err := qb.ToSql()
-	if err != nil {
-		return 0, fmt.Errorf("failed to build count scope: %w", err)
-	}
-
-	countQuery, _, err := sqlc.From(h.schema.TableName).
-		Columns(sqlc.Col("*").Count().As("total")).
-		ToSql()
-	if err != nil {
-		return 0, fmt.Errorf("failed to build count query: %w", err)
-	}
-	if clauses != "" {
-		countQuery += " " + clauses
-	}
-
-	var total int
-	if err = tx.Get(ctx, &total, countQuery, params...); err != nil {
-		return 0, fmt.Errorf("failed to execute count query: %w", err)
-	}
-
-	return total, nil
+	return h.repository.Count(tx, qb)
 }
 
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) delete(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (httpserver.Response, error) {

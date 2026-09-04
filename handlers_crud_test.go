@@ -33,7 +33,7 @@ type crudTestOutput struct {
 }
 
 func TestCRUDCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
-	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -72,7 +72,7 @@ func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
-	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -124,7 +124,7 @@ func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 }
 
 func TestCRUDDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
-	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 

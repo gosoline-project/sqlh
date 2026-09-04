@@ -12,7 +12,7 @@ type Option[K sqlr.KeyTypes, E sqlr.Entitier[K]] func(opts *handlerOptions[K, E]
 // CRUD handler. The client is also used by SQLH to begin the transaction, so a
 // custom factory must build repositories against that same client when
 // prepared statements are enabled.
-type RepositoryTxFactory[K sqlr.KeyTypes, E sqlr.Entitier[K]] func(client sqlc.Client, settings sqlr.Settings) (sqlr.RepositoryTx[K, E], error)
+type RepositoryTxFactory[K sqlr.KeyTypes, E sqlr.Entitier[K]] func(client sqlc.Client, settings sqlr.Settings) (sqlr.CountingRepositoryTx[K, E], error)
 
 type handlerOptions[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 	clientName         string
