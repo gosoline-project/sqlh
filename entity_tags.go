@@ -29,7 +29,11 @@ type sqlhTagDirective struct {
 func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
 	var zero E
 	t := reflect.TypeOf(zero)
-	for t != nil && t.Kind() == reflect.Ptr {
+	if t == nil {
+		t = reflect.TypeOf((*E)(nil)).Elem()
+	}
+
+	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -245,7 +249,7 @@ func visitEntityBuilderType(visitedTypes map[reflect.Type]struct{}, t reflect.Ty
 }
 
 func unwrapFieldType(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 

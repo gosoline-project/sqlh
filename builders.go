@@ -1,6 +1,10 @@
 package sqlh
 
-import "github.com/gosoline-project/sqlr"
+import (
+	"strings"
+
+	"github.com/gosoline-project/sqlr"
+)
 
 func composeBuilders[QB any](builders ...func(qb QB)) func(qb QB) {
 	return func(qb QB) {
@@ -31,20 +35,6 @@ func builderCreateFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderCr
 	}
 }
 
-func builderReadFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderRead) {
-	if tags == nil || len(tags.readPreloadPaths) == 0 {
-		return nil
-	}
-
-	paths := append([]string(nil), tags.readPreloadPaths...)
-
-	return func(qb *sqlr.QueryBuilderRead) {
-		for _, path := range paths {
-			qb.Preload(path)
-		}
-	}
-}
-
 func builderQueryFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
 	if tags == nil || len(tags.queryPreloadPaths) == 0 {
 		return nil
@@ -71,20 +61,6 @@ func builderDeleteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderDe
 	}
 }
 
-func builderUpdateReadFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderRead) {
-	if tags == nil || len(tags.updatePreloadPaths) == 0 {
-		return nil
-	}
-
-	paths := append([]string(nil), tags.updatePreloadPaths...)
-
-	return func(qb *sqlr.QueryBuilderRead) {
-		for _, path := range paths {
-			qb.Preload(path)
-		}
-	}
-}
-
 func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderUpdate) {
 	if tags == nil || (len(tags.updateSyncPaths) == 0 && len(tags.updatePreloadPaths) == 0) {
 		return nil
@@ -99,5 +75,75 @@ func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuil
 		}
 
 		qb.SyncAssociation(paths...)
+	}
+}
+
+func builderPatchWriteFromTags(preloadPaths []string, syncPaths []string, autoSyncPaths []string) func(qb *sqlr.QueryBuilderUpdate) {
+	if len(preloadPaths) == 0 && len(syncPaths) == 0 && len(autoSyncPaths) == 0 {
+		return nil
+	}
+
+	preloads := append([]string(nil), preloadPaths...)
+	paths := append([]string(nil), syncPaths...)
+	autoPaths := append([]string(nil), autoSyncPaths...)
+
+	return func(qb *sqlr.QueryBuilderUpdate) {
+		for _, path := range preloads {
+			qb.Preload(path)
+		}
+		for _, path := range autoPaths {
+			if patchAssociationPathSelected(path, paths) {
+				continue
+			}
+
+			qb.OmitAssociation(path)
+		}
+		if len(paths) > 0 {
+			qb.SyncAssociation(paths...)
+		}
+	}
+}
+
+func patchAssociationPathSelected(path string, selectedPaths []string) bool {
+	for _, selectedPath := range selectedPaths {
+		if path == selectedPath || strings.HasPrefix(path, selectedPath+".") || strings.HasPrefix(selectedPath, path+".") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func builderLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
+	if tags == nil || len(tags.readPreloadPaths) == 0 {
+		return nil
+	}
+
+	paths := append([]string(nil), tags.readPreloadPaths...)
+
+	return func(qb *sqlr.QueryBuilderSelect) {
+		for _, path := range paths {
+			qb.Preload(path)
+		}
+	}
+}
+
+func builderForUpdate(qb *sqlr.QueryBuilderSelect) {
+	qb.ForUpdate()
+}
+
+// builderUpdateLookupFromTags returns preload options for the select-based
+// lookup performed before an update.
+func builderUpdateLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
+	if tags == nil || len(tags.updatePreloadPaths) == 0 {
+		return nil
+	}
+
+	paths := append([]string(nil), tags.updatePreloadPaths...)
+
+	return func(qb *sqlr.QueryBuilderSelect) {
+		for _, path := range paths {
+			qb.Preload(path)
+		}
 	}
 }

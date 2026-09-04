@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	gosolinehttpserver "github.com/gosoline-project/httpserver"
+	"github.com/gosoline-project/sqlh"
 	"github.com/gosoline-project/sqlr"
 	"github.com/justtrackio/gosoline/pkg/cfg"
 	"github.com/justtrackio/gosoline/pkg/log"
@@ -74,7 +75,7 @@ func (s *CrudIntegrationTestSuite) TestReadPostPreloadsAssociations(app suite.Ap
 		},
 		Tags: []TagOutput{
 			{ID: 1, Name: "golang"},
-			{ID: 4, Name: "tutorial"},
+			{ID: 4, Name: tagTutorial},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
@@ -87,7 +88,7 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 	defer app.WaitDone()
 	defer app.Stop()
 
-	var output []PostOutput
+	var output sqlh.ListOutput[PostOutput]
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]any{
@@ -119,7 +120,8 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 		},
 		CreatedAt: time.Date(2024, 1, 10, 14, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2024, 1, 10, 14, 0, 0, 0, time.UTC),
-	}}, output)
+	}}, output.Results)
+	s.Equal(1, output.Total)
 
 	return nil
 }
@@ -249,6 +251,124 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: stored.UpdatedAt,
 	}, postOutputFromPost(stored))
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostChangesOnlySuppliedScalar(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"title": "Patched title",
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal("Patched title", output.Title)
+	s.Equal([]TagOutput{{ID: 1, Name: "golang"}, {ID: 4, Name: tagTutorial}}, output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Equal("Patched title", stored.Title)
+	s.Equal([]TagOutput{{ID: 1, Name: "golang"}, {ID: 4, Name: tagTutorial}}, postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostReplacesSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": []PostInputTag{{ID: 1}, {ID: 3}},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal([]TagOutput{{ID: 1, Name: "golang"}, {ID: 3, Name: "testing"}}, output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Equal([]TagOutput{{ID: 1, Name: "golang"}, {ID: 3, Name: "testing"}}, postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostEmptyArrayClearsSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": []PostInputTag{},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Empty(output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Empty(postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostNullClearsSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": nil,
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Empty(output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Empty(postOutputFromPost(stored).Tags)
 
 	return nil
 }

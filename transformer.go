@@ -3,82 +3,102 @@ package sqlh
 import (
 	"context"
 
-	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlr"
 	"github.com/justtrackio/gosoline/pkg/cfg"
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-// Transformer converts between HTTP input DTOs and database entities, and
-// renders HTTP responses from entities. It is the central extension point for
-// [HandlerCrud]: implement this interface to control how incoming request
-// bodies are mapped to entities and how entities are serialised in responses.
-//
-// Type parameters:
-//   - K: the primary key type (must satisfy [sqlr.KeyTypes]).
-//   - E: the entity type (must implement [sqlr.Entitier][K]).
-//   - IC: the create-input DTO type.
-//   - IU: the update-input DTO type.
-type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] interface {
-	// TransformCreateInput converts a create-input DTO into a new entity that
-	// can be persisted by the repository.
+// Transformer maps HTTP DTOs to entities and entities to typed HTTP output.
+// The output is deliberately an ordinary Go value so httpserver.Bind can
+// negotiate its representation from the request's Accept header.
+type Transformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU Identified[K], O any] interface {
 	TransformCreateInput(ctx context.Context, input *IC) (*E, error)
-	// TransformUpdateInput merges an update-input DTO into an existing entity
-	// and returns the updated entity ready for persistence.
 	TransformUpdateInput(ctx context.Context, entity *E, input *IU) (*E, error)
-	// RenderEntityResponse serialises a single entity into an HTTP response.
-	RenderEntityResponse(ctx context.Context, entity *E) (httpserver.Response, error)
-	// RenderQueryResponse serialises a slice of entities into an HTTP response.
-	RenderQueryResponse(ctx context.Context, entity []E) (httpserver.Response, error)
+	TransformOutput(ctx context.Context, entity *E) (O, error)
 }
 
-// BuilderCreateAware augments the create builder used for
-// [sqlr.Repository.Create].
+// PatchTransformer optionally adds JSON Merge Patch support to a CRUD
+// transformer. TransformPatchInputFromEntity maps the loaded entity to a
+// complete update input. SQLH merges the request document into that input and
+// passes the result to [Transformer.TransformUpdateInput].
+type PatchTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IU Identified[K]] interface {
+	TransformPatchInputFromEntity(ctx context.Context, entity *E) (*IU, error)
+}
+
+// TransformerFactory constructs a Transformer during application startup.
+type TransformerFactory[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU Identified[K], O any] func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU, O], error)
+
+// BuilderCreateAware augments the SQLR create builder used by CRUD create
+// operations.
 type BuilderCreateAware interface {
 	BuilderCreate(qb *sqlr.QueryBuilderCreate)
 }
 
-// BuilderReadAware augments the read builder used for single-entity reads.
+// BuilderReadAware augments the select builder used to look up one entity.
 type BuilderReadAware interface {
-	BuilderRead(qb *sqlr.QueryBuilderRead)
+	BuilderRead(qb *sqlr.QueryBuilderSelect)
 }
 
-// BuilderQueryAware augments the select builder used for query/list requests.
+// BuilderQueryAware augments the select builder used by list operations.
 type BuilderQueryAware interface {
 	BuilderQuery(qb *sqlr.QueryBuilderSelect)
 }
 
-// BuilderDeleteAware augments the delete builder used for
-// [sqlr.Repository.Delete].
+// BuilderDeleteAware augments the SQLR delete builder used by physical deletes.
 type BuilderDeleteAware interface {
 	BuilderDelete(qb *sqlr.QueryBuilderDelete)
 }
 
-// BuilderUpdateReadAware augments the read builder used to load the existing
-// entity before [Transformer.TransformUpdateInput] runs.
+// BuilderUpdateReadAware augments the select builder used to load an entity
+// before an update.
 type BuilderUpdateReadAware interface {
-	BuilderUpdateRead(qb *sqlr.QueryBuilderRead)
+	BuilderUpdateRead(qb *sqlr.QueryBuilderSelect)
 }
 
-// BuilderUpdateWriteAware augments the update builder used for
-// [sqlr.Repository.Update], including association sync and any post-update
-// preloads used to rehydrate the response entity.
+// BuilderUpdateWriteAware augments the SQLR update builder used to persist an
+// updated entity.
 type BuilderUpdateWriteAware interface {
 	BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate)
 }
 
-// TransformerFactory is a constructor function for a [Transformer]. It follows
-// the standard gosoline factory pattern, receiving the application context,
-// configuration, and logger so that the transformer can perform any necessary
-// setup (e.g. loading config values or creating dependencies) at startup.
-type TransformerFactory[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any] func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error)
-
-// SimpleTransformer wraps an already-constructed [Transformer] into a
-// [TransformerFactory]. This is useful when the transformer requires no
-// configuration or lazy initialisation and can be created before the factory
-// is called.
-func SimpleTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU any](transformer Transformer[K, E, IC, IU]) TransformerFactory[K, E, IC, IU] {
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (Transformer[K, E, IC, IU], error) {
-		return transformer, nil
+// NewCrudDefinitionFromTransformer creates a static CRUD definition from a
+// transformer. Relation builder-aware interfaces are copied into the
+// definition when the transformer implements them.
+func NewCrudDefinitionFromTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU Identified[K], O any](transformer Transformer[K, E, IC, IU, O]) CrudDefinition[K, E, K, IC, IU, ListInput, O] {
+	definition := CrudDefinition[K, E, K, IC, IU, ListInput, O]{
+		CreateInput: transformer.TransformCreateInput,
+		UpdateInput: transformer.TransformUpdateInput,
+		Output:      transformer.TransformOutput,
 	}
+
+	if builder, ok := transformer.(BuilderCreateAware); ok {
+		definition.BuilderCreate = builder.BuilderCreate
+	}
+	if builder, ok := transformer.(BuilderReadAware); ok {
+		definition.BuilderRead = builder.BuilderRead
+	}
+	if builder, ok := transformer.(BuilderQueryAware); ok {
+		definition.BuilderQuery = builder.BuilderQuery
+	}
+	if builder, ok := transformer.(BuilderDeleteAware); ok {
+		definition.BuilderDelete = builder.BuilderDelete
+	}
+	if builder, ok := transformer.(BuilderUpdateReadAware); ok {
+		definition.BuilderUpdateRead = builder.BuilderUpdateRead
+	}
+	if builder, ok := transformer.(BuilderUpdateWriteAware); ok {
+		definition.BuilderUpdateWrite = builder.BuilderUpdateWrite
+	}
+	if patchTransformer, ok := transformer.(PatchTransformer[K, E, IU]); ok {
+		definition.PatchInputFromEntity = patchTransformer.TransformPatchInputFromEntity
+	}
+
+	return definition
+}
+
+// SimpleTransformer wraps an already-constructed transformer in a static CRUD
+// definition factory. Use a custom CrudDefinition when the default repository
+// operations need to be replaced.
+func SimpleTransformer[K sqlr.KeyTypes, E sqlr.Entitier[K], IC any, IU Identified[K], O any](transformer Transformer[K, E, IC, IU, O]) CrudDefinitionFactory[K, E, K, IC, IU, ListInput, O] {
+	return SimpleCrudDefinition(NewCrudDefinitionFromTransformer(transformer))
 }
