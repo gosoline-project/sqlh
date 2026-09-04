@@ -128,7 +128,7 @@ func TestNormalizePatchAssociationEmptyArrayCreatesEmptySlice(t *testing.T) {
 }
 
 func TestCRUDPatchAppliesMergePatchInTransaction(t *testing.T) {
-	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: sqlcmocks.NewTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
