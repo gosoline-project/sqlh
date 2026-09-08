@@ -20,19 +20,8 @@ type InputByID[K sqlr.KeyTypes] struct {
 	ID K `uri:"id" json:"-"`
 }
 
-// GetForceFilters returns a copy of the server-owned filters carried by the identity input.
-func (i InputByID[K]) GetForceFilters() []ForceFilter {
-	return i.filtersCopy()
-}
-
-// GetID returns the URI identity. It is used by update inputs that embed
+// GetId returns the URI identity. It is used by update inputs that embed
 // InputByID.
-func (i InputByID[K]) GetID() K {
-	return i.ID
-}
-
-// GetId mirrors SQLR's entity naming for callers that use the input as a small
-// identity value outside SQLH.
 func (i InputByID[K]) GetId() K {
 	return i.ID
 }
@@ -42,7 +31,7 @@ func (i InputByID[K]) GetId() K {
 // carrier used to scope the pre-update lookup.
 type Identified[K sqlr.KeyTypes] interface {
 	ForceFilterSource
-	GetID() K
+	GetId() K
 }
 
 // ListOutput is the standard typed response for list operations. Results are

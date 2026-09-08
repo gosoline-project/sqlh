@@ -83,7 +83,7 @@ func TestPatchInputStoresDocumentAndRetainsURIIdentity(t *testing.T) {
 	input := PatchInput[int]{InputByID: InputByID[int]{ID: 9}}
 
 	require.NoError(t, json.Unmarshal([]byte(`{"name":"updated"}`), &input))
-	require.Equal(t, 9, input.GetID())
+	require.Equal(t, 9, input.GetId())
 	require.True(t, input.Document().Has("name"))
 }
 
