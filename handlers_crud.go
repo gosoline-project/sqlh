@@ -3,7 +3,6 @@ package sqlh
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlc"
@@ -236,29 +235,15 @@ type CRUD[
 	LI ListInputSource,
 	O any,
 ] struct {
-	repository sqlr.CountingRepositoryTx[K, E]
-	runner     *TxRunner
-	schema     *sqlr.EntitySchema
-	definition CrudDefinition[K, E, ID, IC, IU, LI, O]
+	resource *resource[K, E]
 
-	builderCreate      func(*sqlr.QueryBuilderCreate)
-	builderRead        func(*sqlr.QueryBuilderSelect)
-	builderQuery       func(*sqlr.QueryBuilderSelect)
-	builderDelete      func(*sqlr.QueryBuilderDelete)
-	builderUpdateRead  func(*sqlr.QueryBuilderSelect)
-	builderUpdateWrite func(*sqlr.QueryBuilderUpdate)
-
-	patchAssociationFields   map[string]string
-	patchAssociationTriggers map[string]string
-	patchPreloadPaths        []string
-	patchAutoSyncPaths       []string
-	patchOperation           TxOperation[PatchInput[ID], O]
-	createOperation          TxOperation[IC, O]
-	readOperation            TxOperation[InputByID[ID], O]
-	updateOperation          TxOperation[IU, O]
-	listOperation            TxOperation[LI, ListOutput[O]]
-	deleteOperation          TxOperation[InputByID[ID], httpserver.Response]
-	deleteTypedOperation     TxOperation[InputByID[ID], O]
+	patchOperation       TxOperation[PatchInput[ID], O]
+	createOperation      TxOperation[IC, O]
+	readOperation        TxOperation[InputByID[ID], O]
+	updateOperation      TxOperation[IU, O]
+	listOperation        TxOperation[LI, ListOutput[O]]
+	deleteOperation      TxOperation[InputByID[ID], httpserver.Response]
+	deleteTypedOperation TxOperation[InputByID[ID], O]
 }
 
 // NewCRUD creates a handler factory for a typed CRUD definition.
@@ -330,233 +315,100 @@ func newCRUD[
 	LI ListInputSource,
 	O any,
 ](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CRUD[K, E, ID, IC, IU, LI, O], error) {
-	if repository == nil {
-		return nil, fmt.Errorf("transaction repository is required")
-	}
-	if runner == nil {
-		return nil, fmt.Errorf("transaction runner is required")
-	}
-	if schema == nil || schema.PrimaryKey == nil {
-		return nil, fmt.Errorf("entity schema with primary key is required")
-	}
-
-	tags, err := parseEntityBuilderTags[E]()
+	res, err := newResource(repository, runner, schema, resourceBuilderHooks{
+		create:      definition.BuilderCreate,
+		read:        definition.BuilderRead,
+		query:       definition.BuilderQuery,
+		delete:      definition.BuilderDelete,
+		updateRead:  definition.BuilderUpdateRead,
+		updateWrite: definition.BuilderUpdateWrite,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse entity %T %s tags: %w", *new(E), sqlhTagName, err)
+		return nil, err
 	}
 
-	patchAssociationFields, err := buildPatchAssociationFields[IU](tags.updateSyncPaths, definition.PatchAssociations)
+	patchAssociationFields, patchAssociationTriggers, err := res.configurePatch[IU](definition.PatchAssociations, definition.PatchAssociationTriggers)
 	if err != nil {
-		return nil, fmt.Errorf("failed to configure patch associations: %w", err)
+		return nil, err
 	}
-	patchAssociationTriggers, err := buildPatchAssociationTriggers(tags.updateSyncPaths, definition.PatchAssociationTriggers)
+
+	createOperation, err := res.buildCreateOperation(definition.CreateOperation, definition.CreateInput, definition.Output)
 	if err != nil {
-		return nil, fmt.Errorf("failed to configure patch association triggers: %w", err)
-	}
-
-	patchAutoSyncPaths := append([]string(nil), schema.AutoSyncUpdatePaths()...)
-	patchAutoSyncPaths = append(patchAutoSyncPaths, schema.AutoSyncMany2manyPaths()...)
-	patchAutoSyncPaths = uniqueSortedStrings(patchAutoSyncPaths)
-
-	handler := &CRUD[K, E, ID, IC, IU, LI, O]{
-		repository:               repository,
-		runner:                   runner,
-		schema:                   schema,
-		definition:               definition,
-		patchAssociationFields:   patchAssociationFields,
-		patchAssociationTriggers: patchAssociationTriggers,
-		patchPreloadPaths:        append([]string(nil), tags.updatePreloadPaths...),
-		patchAutoSyncPaths:       patchAutoSyncPaths,
-		builderCreate: composeBuilders(
-			builderCreateFromTags(tags),
-			definition.BuilderCreate,
-		),
-		builderRead: composeBuilders(
-			builderLookupFromTags(tags),
-			definition.BuilderRead,
-		),
-		builderQuery: composeBuilders(
-			builderQueryFromTags(tags),
-			definition.BuilderQuery,
-		),
-		builderDelete: composeBuilders(
-			builderDeleteFromTags(tags),
-			definition.BuilderDelete,
-		),
-		builderUpdateRead: composeBuilders(
-			builderUpdateLookupFromTags(tags),
-			definition.BuilderUpdateRead,
-			builderForUpdate,
-		),
-		builderUpdateWrite: composeBuilders(
-			builderUpdateWriteFromTags(tags),
-			definition.BuilderUpdateWrite,
-		),
-	}
-
-	if err := handler.configureCreateOperation(); err != nil {
 		return nil, err
 	}
-	if err := handler.configureReadOperation(); err != nil {
+	readOperation, err := res.buildReadOperation(definition.ReadOperation, definition.Identity, definition.DeleteScope, definition.Output)
+	if err != nil {
 		return nil, err
 	}
-	if err := handler.configureUpdateOperation(); err != nil {
+	updateOperation, err := res.buildUpdateOperation(definition.UpdateOperation, definition.Identity, definition.DeleteScope, definition.UpdateInput, definition.Output)
+	if err != nil {
 		return nil, err
 	}
-	if err := handler.configurePatchOperation(); err != nil {
+	patchOperation, err := res.buildPatchOperation(
+		definition.PatchOperation,
+		definition.Identity,
+		definition.DeleteScope,
+		definition.PatchInputFromEntity,
+		definition.UpdateInput,
+		definition.Output,
+		patchAssociationFields,
+		patchAssociationTriggers,
+	)
+	if err != nil {
 		return nil, err
 	}
-	if err := handler.configureListOperation(); err != nil {
+	listOperation, err := res.buildListOperation(definition.ListOperation, definition.DeleteScope, definition.Query, definition.Count, definition.Output)
+	if err != nil {
 		return nil, err
 	}
-	handler.configureDeleteOperation()
-	handler.configureDeleteTypedOperation()
 
-	return handler, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureCreateOperation() error {
-	if h.definition.CreateOperation != nil {
-		h.createOperation = h.definition.CreateOperation
-
-		return nil
-	}
-	if h.definition.CreateInput == nil {
-		return fmt.Errorf("CRUD create input mapper is required")
-	}
-	if h.definition.Output == nil {
-		return fmt.Errorf("CRUD output mapper is required")
-	}
-
-	h.createOperation = h.create
-
-	return nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureReadOperation() error {
-	if h.definition.ReadOperation != nil {
-		h.readOperation = h.definition.ReadOperation
-
-		return nil
-	}
-	if h.definition.Output == nil {
-		return fmt.Errorf("CRUD output mapper is required")
-	}
-
-	h.readOperation = h.read
-
-	return nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureUpdateOperation() error {
-	if h.definition.UpdateOperation != nil {
-		h.updateOperation = h.definition.UpdateOperation
-
-		return nil
-	}
-	if h.definition.UpdateInput == nil {
-		return fmt.Errorf("CRUD update input mapper is required")
-	}
-	if h.definition.Output == nil {
-		return fmt.Errorf("CRUD output mapper is required")
-	}
-
-	h.updateOperation = h.update
-
-	return nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configurePatchOperation() error {
-	if h.definition.PatchOperation != nil {
-		h.patchOperation = h.definition.PatchOperation
-
-		return nil
-	}
-	if h.definition.PatchInputFromEntity == nil {
-		return nil
-	}
-	if h.definition.UpdateInput == nil {
-		return fmt.Errorf("CRUD update input mapper is required for default patch operation")
-	}
-	if h.definition.Output == nil {
-		return fmt.Errorf("CRUD output mapper is required")
-	}
-
-	h.patchOperation = h.patch
-
-	return nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureListOperation() error {
-	if h.definition.ListOperation != nil {
-		h.listOperation = h.definition.ListOperation
-
-		return nil
-	}
-	if h.definition.Output == nil {
-		return fmt.Errorf("CRUD output mapper is required")
-	}
-
-	h.listOperation = h.list
-
-	return nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureDeleteOperation() {
-	if h.definition.DeleteOperation != nil {
-		h.deleteOperation = h.definition.DeleteOperation
-
-		return
-	}
-
-	h.deleteOperation = h.delete
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) configureDeleteTypedOperation() {
-	if h.definition.DeleteTypedOperation != nil {
-		h.deleteTypedOperation = h.definition.DeleteTypedOperation
-
-		return
-	}
-
-	h.deleteTypedOperation = h.deleteTyped
+	return &CRUD[K, E, ID, IC, IU, LI, O]{
+		resource:             res,
+		createOperation:      createOperation,
+		readOperation:        readOperation,
+		updateOperation:      updateOperation,
+		patchOperation:       patchOperation,
+		listOperation:        listOperation,
+		deleteOperation:      res.buildDeleteOperation(definition.DeleteOperation, definition.Identity, definition.DeleteScope, definition.Delete),
+		deleteTypedOperation: res.buildDeleteTypedOperation(definition.DeleteTypedOperation, definition.Identity, definition.DeleteScope, definition.Delete, definition.Output),
+	}, nil
 }
 
 // Create executes the create operation in a transaction and returns the typed
 // output only after the transaction commits.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
-	return RunValue(ctx, h.runner, input, h.createOperation)
+	return h.resource.runner.RunValue(ctx, input, h.createOperation)
 }
 
 // Read executes a scoped identity lookup in a transaction and returns the
 // typed output only after the transaction commits.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Read(ctx context.Context, input *InputByID[ID]) (O, error) {
-	return RunValue(ctx, h.runner, input, h.readOperation)
+	return h.resource.runner.RunValue(ctx, input, h.readOperation)
 }
 
 // Update performs a scoped identity lookup, applies the update mapper, and
 // persists the entity in one transaction.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
-	return RunValue(ctx, h.runner, input, h.updateOperation)
+	return h.resource.runner.RunValue(ctx, input, h.updateOperation)
 }
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits. It is available when the CRUD
 // definition configures PatchInputFromEntity or PatchOperation.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
-	return RunValue(ctx, h.runner, input, h.patchOperation)
+	return h.resource.runner.RunValue(ctx, input, h.patchOperation)
 }
 
 // List queries and counts entities using one shared filter scope, then maps the
 // results to the typed list output.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
-	return RunValue(ctx, h.runner, input, h.listOperation)
+	return h.resource.runner.RunValue(ctx, input, h.listOperation)
 }
 
 // Delete performs a scoped identity lookup and then uses the configured delete
 // strategy. The default response is 204 No Content.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *InputByID[ID]) (httpserver.Response, error) {
-	return RunValue(ctx, h.runner, input, h.deleteOperation)
+	return h.resource.runner.RunValue(ctx, input, h.deleteOperation)
 }
 
 // DeleteTyped performs the configured delete operation and returns its typed
@@ -564,353 +416,17 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *Input
 // response negotiation; the standard [Delete] operation remains a 204 escape
 // hatch for conventional physical deletes.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputByID[ID]) (O, error) {
-	return RunValue(ctx, h.runner, input, h.deleteTypedOperation)
+	return h.resource.runner.RunValue(ctx, input, h.deleteTypedOperation)
 }
 
 // Close releases resources held by the SQLR repository, including prepared
 // statements when repository prepared statements are enabled.
 func (h *CRUD[K, E, ID, IC, IU, LI, O]) Close() error {
-	if h == nil || h.repository == nil {
+	if h == nil || h.resource == nil {
 		return nil
 	}
 
-	return h.repository.Close()
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) create(ctx context.Context, tx sqlr.TTx, input *IC) (O, error) {
-	var zero O
-	if input == nil {
-		return zero, fmt.Errorf("create input is required")
-	}
-
-	entity, err := h.definition.CreateInput(ctx, input)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform create input: %w", err)
-	}
-	if entity == nil {
-		return zero, fmt.Errorf("create input mapper returned a nil entity")
-	}
-
-	if err = h.repository.Create(tx, entity, h.builderCreate); err != nil {
-		return zero, fmt.Errorf("failed to create entity: %w", err)
-	}
-
-	output, err := h.definition.Output(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform created entity: %w", err)
-	}
-
-	return output, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) read(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (O, error) {
-	var zero O
-	if input == nil {
-		return zero, fmt.Errorf("read input is required")
-	}
-
-	entity, err := h.lookup(ctx, tx, input.ID, h.lookupScope(input), h.builderRead)
-	if err != nil {
-		return zero, fmt.Errorf("failed to read entity with id %v: %w", input.ID, err)
-	}
-
-	output, err := h.definition.Output(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform read entity: %w", err)
-	}
-
-	return output, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) update(ctx context.Context, tx sqlr.TTx, input *IU) (O, error) {
-	var zero O
-	if input == nil {
-		return zero, fmt.Errorf("update input is required")
-	}
-
-	value := *input
-	id := value.GetID()
-	entity, err := h.lookup(ctx, tx, id, h.lookupScope(value), h.builderUpdateRead)
-	if err != nil {
-		return zero, fmt.Errorf("failed to read entity before update with id %v: %w", id, err)
-	}
-
-	entity, err = h.definition.UpdateInput(ctx, entity, input)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform update input: %w", err)
-	}
-	if entity == nil {
-		return zero, fmt.Errorf("update input mapper returned a nil entity")
-	}
-
-	entity, err = h.repository.Update(tx, entity, h.builderUpdateWrite)
-	if err != nil {
-		return zero, fmt.Errorf("failed to update entity with id %v: %w", id, err)
-	}
-
-	output, err := h.definition.Output(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform updated entity: %w", err)
-	}
-
-	return output, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) patch(ctx context.Context, tx sqlr.TTx, input *PatchInput[ID]) (O, error) {
-	var zero O
-	if input == nil {
-		return zero, fmt.Errorf("patch input is required")
-	}
-
-	document := input.Document()
-	if !document.valid() {
-		return zero, fmt.Errorf("patch document is required")
-	}
-
-	entity, err := h.lookup(ctx, tx, input.ID, h.lookupScope(input), h.builderUpdateRead)
-	if err != nil {
-		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.ID, err)
-	}
-
-	completeInput, err := h.definition.PatchInputFromEntity(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to create patch input from entity: %w", err)
-	}
-	if completeInput == nil {
-		return zero, fmt.Errorf("patch input from entity mapper returned nil")
-	}
-
-	if err = document.MergeInto(completeInput); err != nil {
-		return zero, fmt.Errorf("failed to apply patch: %w", err)
-	}
-
-	entity, err = h.definition.UpdateInput(ctx, entity, completeInput)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform merged patch input: %w", err)
-	}
-	if entity == nil {
-		return zero, fmt.Errorf("update input mapper returned a nil entity")
-	}
-
-	selectedPaths := selectPatchAssociationPaths(document, h.patchAssociationFields)
-	selectedPaths = append(selectedPaths, selectPatchAssociationPaths(document, h.patchAssociationTriggers)...)
-	selectedPaths = uniqueSortedStrings(selectedPaths)
-	if err = normalizePatchAssociationNulls(entity, document, h.patchAssociationFields, selectedPaths); err != nil {
-		return zero, fmt.Errorf("failed to normalize patched associations: %w", err)
-	}
-
-	entity, err = h.repository.Update(tx, entity, builderPatchWriteFromTags(h.patchPreloadPaths, selectedPaths, h.patchAutoSyncPaths))
-	if err != nil {
-		return zero, fmt.Errorf("failed to update entity with id %v after patch: %w", input.ID, err)
-	}
-
-	output, err := h.definition.Output(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform patched entity: %w", err)
-	}
-
-	return output, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) list(ctx context.Context, tx sqlr.TTx, input *LI) (ListOutput[O], error) {
-	if input == nil {
-		return ListOutput[O]{}, fmt.Errorf("list input is required")
-	}
-	value := *input
-	if err := value.ValidatePagination(); err != nil {
-		return ListOutput[O]{}, err
-	}
-	if err := value.ApplyFilters(sqlr.NewQueryBuilderSelect()); err != nil {
-		return ListOutput[O]{}, fmt.Errorf("failed to validate list filters: %w", err)
-	}
-
-	plan := QueryPlan{
-		ApplyBuilder: h.builderQuery,
-		ApplyScope: func(qb *sqlr.QueryBuilderSelect) error {
-			if h.definition.DeleteScope != nil {
-				h.definition.DeleteScope(qb)
-			}
-
-			return value.ApplyFilters(qb)
-		},
-		ApplyPagination: func(qb *sqlr.QueryBuilderSelect) {
-			value.ApplyPagination(qb)
-		},
-	}
-
-	var entities []E
-	var err error
-	var queryErr error
-	if h.definition.Query != nil {
-		entities, err = h.definition.Query(ctx, tx, h.repository, input, plan)
-	} else {
-		entities, err = h.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
-			plan.ApplyBuilder(qb)
-			if scopeErr := plan.ApplyScope(qb); scopeErr != nil {
-				queryErr = scopeErr
-
-				return
-			}
-			plan.ApplyPagination(qb)
-		})
-		if err == nil {
-			err = queryErr
-		}
-	}
-	if err != nil {
-		return ListOutput[O]{}, fmt.Errorf("failed to query entities: %w", err)
-	}
-
-	var total int
-	if h.definition.Count != nil {
-		total, err = h.definition.Count(ctx, tx, h.repository, input, plan)
-	} else {
-		total, err = h.count(tx, plan)
-	}
-	if err != nil {
-		return ListOutput[O]{}, fmt.Errorf("failed to count entities: %w", err)
-	}
-
-	results := make([]O, len(entities))
-	for i := range entities {
-		if results[i], err = h.definition.Output(ctx, &entities[i]); err != nil {
-			return ListOutput[O]{}, fmt.Errorf("failed to transform list entity at index %d: %w", i, err)
-		}
-	}
-
-	return ListOutput[O]{Results: results, Total: total}, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) count(tx sqlr.TTx, plan QueryPlan) (int, error) {
-	qb := sqlr.NewQueryBuilderSelect()
-	plan.ApplyBuilder(qb)
-	if err := plan.ApplyScope(qb); err != nil {
-		return 0, err
-	}
-
-	return h.repository.Count(tx, qb)
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) delete(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (httpserver.Response, error) {
-	if _, err := h.deleteEntity(ctx, tx, input); err != nil {
-		return nil, err
-	}
-
-	return httpserver.NewStatusResponse(http.StatusNoContent), nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) deleteTyped(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (O, error) {
-	var zero O
-
-	entity, err := h.deleteEntity(ctx, tx, input)
-	if err != nil {
-		return zero, err
-	}
-	if h.definition.Output == nil {
-		return zero, fmt.Errorf("CRUD output mapper is required for typed delete")
-	}
-
-	output, err := h.definition.Output(ctx, entity)
-	if err != nil {
-		return zero, fmt.Errorf("failed to transform deleted entity: %w", err)
-	}
-
-	return output, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) deleteEntity(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (*E, error) {
-	if input == nil {
-		return nil, fmt.Errorf("delete input is required")
-	}
-
-	builder := h.builderRead
-	entity, err := h.lookup(ctx, tx, input.ID, h.lookupScope(input), builder)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find entity before delete with id %v: %w", input.ID, err)
-	}
-
-	if h.definition.Delete != nil {
-		if err = h.definition.Delete(ctx, tx, h.repository, entity); err != nil {
-			return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.ID, err)
-		}
-	} else if err = h.repository.Delete(tx, (*entity).GetId(), h.builderDelete); err != nil {
-		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.ID, err)
-	}
-
-	return entity, nil
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) lookup(ctx context.Context, tx sqlr.TTx, id ID, scope QueryScope, builder func(*sqlr.QueryBuilderSelect)) (*E, error) {
-	if h.definition.Identity != nil {
-		return h.definition.Identity(ctx, tx, h.repository, id, scope, builder)
-	}
-
-	var queryErr error
-	entities, err := h.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
-		qb.Where(sqlc.Col(h.schema.TableName, h.schema.PrimaryKey.Name).Eq(id))
-		if scope != nil {
-			queryErr = scope(qb)
-			if queryErr != nil {
-				return
-			}
-		}
-		if builder != nil {
-			builder(qb)
-		}
-		// Do not limit joined lookups to one SQL row. SQLR needs all rows from
-		// has-many joins to hydrate the complete association.
-	})
-	if queryErr != nil {
-		return nil, queryErr
-	}
-	if err != nil {
-		return nil, err
-	}
-	if len(entities) == 0 {
-		return nil, fmt.Errorf("entity id=%v: %w", id, sqlr.ErrNotFound)
-	}
-
-	return &entities[0], nil
-}
-
-func composeScopes(scopes ...QueryScope) QueryScope {
-	return func(qb *sqlr.QueryBuilderSelect) error {
-		for _, scope := range scopes {
-			if scope == nil {
-				continue
-			}
-			if err := scope(qb); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	}
-}
-
-func deleteScope(source DeleteScope) QueryScope {
-	return func(qb *sqlr.QueryBuilderSelect) error {
-		if source != nil {
-			source(qb)
-		}
-
-		return nil
-	}
-}
-
-func forceScope(source ForceFilterSource) QueryScope {
-	return func(qb *sqlr.QueryBuilderSelect) error {
-		applyForceFilters(source, qb)
-
-		return nil
-	}
-}
-
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) lookupScope(source ForceFilterSource) QueryScope {
-	return composeScopes(
-		deleteScope(h.definition.DeleteScope),
-		forceScope(source),
-	)
+	return h.resource.close()
 }
 
 // WithCrudHandlers registers the standard create, read, update, delete, and
