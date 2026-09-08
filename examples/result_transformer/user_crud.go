@@ -38,7 +38,7 @@ func NewUserCrud() httpserver.RegisterFactoryFunc {
 	definition := sqlh.NewCrudDefinition(
 		transformer.TransformCreateInput,
 		transformer.TransformUpdateInput,
-		nil,
+		transformer.TransformPatchInputFromEntity,
 		transformer.TransformOutput,
 	)
 
@@ -60,6 +60,13 @@ func (t *UserTransformer) TransformUpdateInput(ctx context.Context, user *User, 
 	user.Name = input.Name
 
 	return user, nil
+}
+
+func (t *UserTransformer) TransformPatchInputFromEntity(_ context.Context, user *User) (*UserUpdateInput, error) {
+	return &UserUpdateInput{
+		InputByID: sqlh.InputByID[int]{ID: user.Id},
+		Name:      user.Name,
+	}, nil
 }
 
 func (t *UserTransformer) TransformOutput(ctx context.Context, user *User) (UserOutput, error) {

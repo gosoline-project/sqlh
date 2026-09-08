@@ -208,8 +208,8 @@ func SimpleCrudDefinition[
 	}
 }
 
-// NewCrudDefinition creates a definition using the standard mapper callbacks.
-// A nil patchInputFromEntity disables the default PATCH operation.
+// NewCrudDefinition creates a definition using the mapper callbacks required
+// by the standard CRUD operations.
 func NewCrudDefinition[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
@@ -400,8 +400,7 @@ func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input
 }
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
-// output only after the transaction commits. It is available when the CRUD
-// definition configures PatchInputFromEntity or PatchOperation.
+// output only after the transaction commits.
 func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.patchOperation)
 }
@@ -436,9 +435,8 @@ func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Close() error {
 	return h.resource.close()
 }
 
-// WithCrudHandlers registers the standard create, read, update, delete, and
-// list routes for a typed CRUD handler. It also registers PATCH when the
-// definition configures PatchInputFromEntity or PatchOperation.
+// WithCrudHandlers registers the standard create, read, update, patch, delete,
+// and list routes for a typed CRUD handler.
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
@@ -453,9 +451,7 @@ func WithCrudHandlers[
 		router.POST(path, httpserver.Bind(handler.Create))
 		router.GET(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Read, httpserver.NoBodyBinding{}))
 		router.PUT(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Update))
-		if handler.patchOperation != nil {
-			router.PATCH(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Patch))
-		}
+		router.PATCH(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Patch))
 		router.DELETE(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Delete, httpserver.NoBodyBinding{}))
 		router.POST(fmt.Sprintf("/v%d/%s", version, inflection.Plural(entityName)), httpserver.Bind(handler.List))
 	})

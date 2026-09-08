@@ -17,7 +17,7 @@ The redesign implements:
 - customizable delete behavior, including a typed delete operation for
   soft-delete responses and an explicit 204 response escape hatch;
 - typed output that participates in response negotiation;
-- a convenience CRUD route registration function with optional PATCH;
+- a convenience CRUD route registration function with standard PATCH;
 - operation-level extension points for domain behavior;
 - an independent JSON Merge Patch operation with request-aware association synchronization.
 
@@ -73,7 +73,7 @@ without updating a `Total` field.
 ## CRUD API
 
 SQLH exposes independent typed operation builders for create, read, list, update,
-and delete. A convenience registration function composes them and registers the
+patch, and delete. A convenience registration function composes them and registers the
 standard routes. Individual operations remain usable when an endpoint needs
 custom domain behavior.
 
@@ -82,13 +82,13 @@ The standard convenience routes are:
 - `POST /v{version}/{entity}`
 - `GET /v{version}/{entity}/:id`
 - `PUT /v{version}/{entity}/:id`
-- `PATCH /v{version}/{entity}/:id` when PATCH is configured
+- `PATCH /v{version}/{entity}/:id`
 - `DELETE /v{version}/{entity}/:id`
 - `POST /v{version}/{plural-entity}`
 
 The convenience function must accept operation-specific configuration for:
 
-- create and update mapping;
+- create, update, and patch mapping;
 - identity resolution;
 - list query and count;
 - output mapping;
@@ -99,9 +99,10 @@ The convenience function must accept operation-specific configuration for:
 The generic defaults use SQLR primary-key operations. Services can replace the
 identity, list, count, and delete behavior without replacing the whole handler.
 
-PATCH uses `PatchInputFromEntity` to map the loaded entity to a complete
+PATCH uses the required `PatchInputFromEntity` mapper to convert the loaded entity to a complete
 update input, merges the JSON Merge Patch document into that input, and passes
-the result to `UpdateInput`. It derives direct association paths from
+the result to `UpdateInput`. A custom `PatchOperation` replaces this default
+pipeline and its mapper requirements. PATCH derives direct association paths from
 update-input JSON tags and update-sync relation names. Applications can
 configure `PatchAssociationTriggers` when scalar fields cause `UpdateInput` to
 derive relation values. Trigger keys are JSON paths from the original patch

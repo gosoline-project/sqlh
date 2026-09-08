@@ -196,6 +196,21 @@ func (t *MutationPreloadPostTransformer) TransformUpdateInput(_ context.Context,
 	return post, nil
 }
 
+func (t *MutationPreloadPostTransformer) TransformPatchInputFromEntity(_ context.Context, post *MutationPreloadPost) (*MutationPreloadPostUpdateInput, error) {
+	tags := make([]MutationPreloadPostInputTag, len(post.Tags))
+	for i, tag := range post.Tags {
+		tags[i] = MutationPreloadPostInputTag{ID: tag.Id}
+	}
+
+	return &MutationPreloadPostUpdateInput{
+		InputByID: sqlh.InputByID[int64]{ID: post.Id},
+		AuthorID:  post.AuthorID,
+		Title:     post.Title,
+		Status:    post.Status,
+		Tags:      tags,
+	}, nil
+}
+
 func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post *MutationPreloadPost) (MutationPreloadPostOutput, error) {
 	tags := make([]TagOutput, len(post.Tags))
 	for i, tag := range post.Tags {
@@ -233,7 +248,7 @@ func NewMutationPreloadPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 	definition := sqlh.NewCrudDefinition(
 		transformer.TransformCreateInput,
 		transformer.TransformUpdateInput,
-		nil,
+		transformer.TransformPatchInputFromEntity,
 		transformer.TransformOutput,
 	)
 

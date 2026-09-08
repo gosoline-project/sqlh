@@ -21,7 +21,7 @@
 //   - POST /v{version}/{entity}
 //   - GET /v{version}/{entity}/:id
 //   - PUT /v{version}/{entity}/:id
-//   - PATCH /v{version}/{entity}/:id when PATCH is configured
+//   - PATCH /v{version}/{entity}/:id
 //   - DELETE /v{version}/{entity}/:id
 //   - POST /v{version}/{plural-entity}
 //
