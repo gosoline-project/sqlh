@@ -1,6 +1,6 @@
 module github.com/gosoline-project/sqlh
 
-go 1.25.7
+go 1.27.0
 
 require (
 	github.com/evanphx/json-patch v0.5.2

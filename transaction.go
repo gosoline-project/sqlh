@@ -110,15 +110,15 @@ func (r *TxRunner) Run(ctx context.Context, operation func(sqlr.TTx) error) (err
 
 // RunValue executes a value-producing operation in a transaction and returns
 // its value only after the transaction has committed.
-func RunValue[I, O any](ctx context.Context, runner *TxRunner, input *I, operation TxOperation[I, O]) (output O, err error) {
-	if runner == nil {
+func (r *TxRunner) RunValue[I, O any](ctx context.Context, input *I, operation TxOperation[I, O]) (output O, err error) {
+	if r == nil {
 		return output, errors.New("transaction runner is required")
 	}
 	if operation == nil {
 		return output, errors.New("transaction operation is required")
 	}
 
-	err = runner.Run(ctx, func(tx sqlr.TTx) error {
+	err = r.Run(ctx, func(tx sqlr.TTx) error {
 		output, err = operation(ctx, tx, input)
 
 		return err
@@ -134,8 +134,22 @@ func RunValue[I, O any](ctx context.Context, runner *TxRunner, input *I, operati
 
 // InTransaction converts a transaction-aware operation to the ordinary function
 // signature used by httpserver.Bind and authz.Decorate.
-func InTransaction[I, O any](runner *TxRunner, operation TxOperation[I, O]) func(context.Context, *I) (O, error) {
+func (r *TxRunner) InTransaction[I, O any](operation TxOperation[I, O]) func(context.Context, *I) (O, error) {
 	return func(ctx context.Context, input *I) (O, error) {
-		return RunValue(ctx, runner, input, operation)
+		return r.RunValue(ctx, input, operation)
 	}
+}
+
+// RunValue executes a value-producing operation with the supplied runner.
+//
+// Deprecated: use [TxRunner.RunValue].
+func RunValue[I, O any](ctx context.Context, runner *TxRunner, input *I, operation TxOperation[I, O]) (O, error) {
+	return runner.RunValue(ctx, input, operation)
+}
+
+// InTransaction converts an operation with the supplied runner.
+//
+// Deprecated: use [TxRunner.InTransaction].
+func InTransaction[I, O any](runner *TxRunner, operation TxOperation[I, O]) func(context.Context, *I) (O, error) {
+	return runner.InTransaction(operation)
 }
