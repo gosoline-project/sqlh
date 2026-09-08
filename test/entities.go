@@ -221,9 +221,9 @@ func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 	definition := sqlh.NewCrudDefinition(
 		transformer.TransformCreateInput,
 		transformer.TransformUpdateInput,
+		transformer.TransformPatchInputFromEntity,
 		transformer.TransformOutput,
 	)
-	definition.PatchInputFromEntity = transformer.TransformPatchInputFromEntity
 
 	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleCrudDefinition(definition))
 }
@@ -233,6 +233,7 @@ func NewMutationPreloadPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 	definition := sqlh.NewCrudDefinition(
 		transformer.TransformCreateInput,
 		transformer.TransformUpdateInput,
+		nil,
 		transformer.TransformOutput,
 	)
 

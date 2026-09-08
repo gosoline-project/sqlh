@@ -127,7 +127,7 @@ func TestNormalizePatchAssociationEmptyArrayCreatesEmptySlice(t *testing.T) {
 	require.Empty(t, entity.Tags)
 }
 
-func TestCRUDPatchAppliesMergePatchInTransaction(t *testing.T) {
+func TestCrudHandlerPatchAppliesMergePatchInTransaction(t *testing.T) {
 	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: sqlcmocks.NewTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
@@ -157,18 +157,18 @@ func TestCRUDPatchAppliesMergePatchInTransaction(t *testing.T) {
 
 			return entity, nil
 		},
+		func(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
+			return &crudTestUpdateInput{
+				InputByID: InputByID[int]{ID: entity.Id},
+				Name:      entity.Name,
+			}, nil
+		},
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
 	)
-	definition.PatchInputFromEntity = func(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
-		return &crudTestUpdateInput{
-			InputByID: InputByID[int]{ID: entity.Id},
-			Name:      entity.Name,
-		}, nil
-	}
 
-	handler, err := newCRUD(repository, runner, schema, definition)
+	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
 	input := PatchInput[int]{InputByID: InputByID[int]{ID: 7}}

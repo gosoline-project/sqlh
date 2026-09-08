@@ -38,6 +38,7 @@ func NewUserCrud() httpserver.RegisterFactoryFunc {
 	definition := sqlh.NewCrudDefinition(
 		transformer.TransformCreateInput,
 		transformer.TransformUpdateInput,
+		nil,
 		transformer.TransformOutput,
 	)
 

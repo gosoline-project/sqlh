@@ -25,7 +25,7 @@
 //   - DELETE /v{version}/{entity}/:id
 //   - POST /v{version}/{plural-entity}
 //
-// [NewCRUD] and the individual methods on [CRUD] support manual route
+// [NewCrudHandler] and the individual methods on [CrudHandler] support manual route
 // registration and operation decoration. [CrudDefinition] provides mapping,
 // identity, query, count, delete, and SQLR builder hooks. Its operation fields
 // replace complete default operations when an endpoint needs custom behavior.
@@ -99,8 +99,8 @@
 // before SQLH returns an entity.
 //
 // Physical SQLR deletion is the default. Applications can provide an explicit
-// soft-delete strategy. [CRUD.DeleteTyped] and [DeleteTypedOperation] return a
-// negotiated typed result for such endpoints. [CRUD.Delete] retains the
+// soft-delete strategy. [CrudHandler.DeleteTyped] and [DeleteTypedOperation] return a
+// negotiated typed result for such endpoints. [CrudHandler.Delete] retains the
 // conventional 204 response. SQLH does not infer soft deletion from field
 // names.
 //

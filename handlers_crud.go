@@ -209,6 +209,7 @@ func SimpleCrudDefinition[
 }
 
 // NewCrudDefinition creates a definition using the standard mapper callbacks.
+// A nil patchInputFromEntity disables the default PATCH operation.
 func NewCrudDefinition[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
@@ -216,17 +217,23 @@ func NewCrudDefinition[
 	IC any,
 	IU Identified[ID],
 	O any,
-](createInput func(context.Context, *IC) (*E, error), updateInput func(context.Context, *E, *IU) (*E, error), output func(context.Context, *E) (O, error)) CrudDefinition[K, E, ID, IC, IU, ListInput, O] {
+](
+	createInput func(context.Context, *IC) (*E, error),
+	updateInput func(context.Context, *E, *IU) (*E, error),
+	patchInputFromEntity func(context.Context, *E) (*IU, error),
+	output func(context.Context, *E) (O, error),
+) CrudDefinition[K, E, ID, IC, IU, ListInput, O] {
 	return CrudDefinition[K, E, ID, IC, IU, ListInput, O]{
-		CreateInput: createInput,
-		UpdateInput: updateInput,
-		Output:      output,
+		CreateInput:          createInput,
+		UpdateInput:          updateInput,
+		PatchInputFromEntity: patchInputFromEntity,
+		Output:               output,
 	}
 }
 
-// CRUD is a transaction-aware typed CRUD handler. Its methods have the public
+// CrudHandler is a transaction-aware typed CRUD handler. Its methods have the public
 // operation shape expected by httpserver.Bind and authz.Decorate.
-type CRUD[
+type CrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
 	ID sqlr.KeyTypes,
@@ -246,8 +253,8 @@ type CRUD[
 	deleteTypedOperation TxOperation[InputByID[ID], O]
 }
 
-// NewCRUD creates a handler factory for a typed CRUD definition.
-func NewCRUD[
+// NewCrudHandler creates a handler factory for a typed CRUD definition.
+func NewCrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
 	ID sqlr.KeyTypes,
@@ -255,7 +262,7 @@ func NewCRUD[
 	IU Identified[ID],
 	LI ListInputSource,
 	O any,
-](definitionFactory CrudDefinitionFactory[K, E, ID, IC, IU, LI, O], options ...Option[K, E]) httpserver.HandlerFactory[CRUD[K, E, ID, IC, IU, LI, O]] {
+](definitionFactory CrudDefinitionFactory[K, E, ID, IC, IU, LI, O], options ...Option[K, E]) httpserver.HandlerFactory[CrudHandler[K, E, ID, IC, IU, LI, O]] {
 	opts := newOpts[K, E]()
 	for _, option := range options {
 		if option != nil {
@@ -263,7 +270,7 @@ func NewCRUD[
 		}
 	}
 
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*CRUD[K, E, ID, IC, IU, LI, O], error) {
+	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*CrudHandler[K, E, ID, IC, IU, LI, O], error) {
 		if definitionFactory == nil {
 			return nil, fmt.Errorf("CRUD definition factory is required")
 		}
@@ -297,7 +304,7 @@ func NewCRUD[
 			return nil, fmt.Errorf("failed to parse entity schema for CRUD handler: %w", err)
 		}
 
-		handler, err := newCRUD(repository, runner, schema, definition)
+		handler, err := newCrudHandler(repository, runner, schema, definition)
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +313,7 @@ func NewCRUD[
 	}
 }
 
-func newCRUD[
+func newCrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
 	ID sqlr.KeyTypes,
@@ -314,7 +321,7 @@ func newCRUD[
 	IU Identified[ID],
 	LI ListInputSource,
 	O any,
-](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CRUD[K, E, ID, IC, IU, LI, O], error) {
+](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CrudHandler[K, E, ID, IC, IU, LI, O], error) {
 	res, err := newResource(repository, runner, schema, resourceBuilderHooks{
 		create:      definition.BuilderCreate,
 		read:        definition.BuilderRead,
@@ -362,7 +369,7 @@ func newCRUD[
 		return nil, err
 	}
 
-	return &CRUD[K, E, ID, IC, IU, LI, O]{
+	return &CrudHandler[K, E, ID, IC, IU, LI, O]{
 		resource:             res,
 		createOperation:      createOperation,
 		readOperation:        readOperation,
@@ -376,38 +383,38 @@ func newCRUD[
 
 // Create executes the create operation in a transaction and returns the typed
 // output only after the transaction commits.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.createOperation)
 }
 
 // Read executes a scoped identity lookup in a transaction and returns the
 // typed output only after the transaction commits.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Read(ctx context.Context, input *InputByID[ID]) (O, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Read(ctx context.Context, input *InputByID[ID]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.readOperation)
 }
 
 // Update performs a scoped identity lookup, applies the update mapper, and
 // persists the entity in one transaction.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.updateOperation)
 }
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits. It is available when the CRUD
 // definition configures PatchInputFromEntity or PatchOperation.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.patchOperation)
 }
 
 // List queries and counts entities using one shared filter scope, then maps the
 // results to the typed list output.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
 	return h.resource.runner.RunValue(ctx, input, h.listOperation)
 }
 
 // Delete performs a scoped identity lookup and then uses the configured delete
 // strategy. The default response is 204 No Content.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *InputByID[ID]) (httpserver.Response, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *InputByID[ID]) (httpserver.Response, error) {
 	return h.resource.runner.RunValue(ctx, input, h.deleteOperation)
 }
 
@@ -415,13 +422,13 @@ func (h *CRUD[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *Input
 // output. Bind this operation directly when a soft-delete endpoint should use
 // response negotiation; the standard [Delete] operation remains a 204 escape
 // hatch for conventional physical deletes.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputByID[ID]) (O, error) {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputByID[ID]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.deleteTypedOperation)
 }
 
 // Close releases resources held by the SQLR repository, including prepared
 // statements when repository prepared statements are enabled.
-func (h *CRUD[K, E, ID, IC, IU, LI, O]) Close() error {
+func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Close() error {
 	if h == nil || h.resource == nil {
 		return nil
 	}
@@ -441,7 +448,7 @@ func WithCrudHandlers[
 	LI ListInputSource,
 	O any,
 ](version int, entityName string, definitionFactory CrudDefinitionFactory[K, E, ID, IC, IU, LI, O], options ...Option[K, E]) httpserver.RegisterFactoryFunc {
-	return httpserver.With(NewCRUD(definitionFactory, options...), func(router *httpserver.Router, handler *CRUD[K, E, ID, IC, IU, LI, O]) {
+	return httpserver.With(NewCrudHandler(definitionFactory, options...), func(router *httpserver.Router, handler *CrudHandler[K, E, ID, IC, IU, LI, O]) {
 		path := fmt.Sprintf("/v%d/%s", version, entityName)
 		router.POST(path, httpserver.Bind(handler.Create))
 		router.GET(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Read, httpserver.NoBodyBinding{}))
