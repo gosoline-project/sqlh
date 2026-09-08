@@ -139,17 +139,3 @@ func (r *TxRunner) InTransaction[I, O any](operation TxOperation[I, O]) func(con
 		return r.RunValue(ctx, input, operation)
 	}
 }
-
-// RunValue executes a value-producing operation with the supplied runner.
-//
-// Deprecated: use [TxRunner.RunValue].
-func RunValue[I, O any](ctx context.Context, runner *TxRunner, input *I, operation TxOperation[I, O]) (O, error) {
-	return runner.RunValue(ctx, input, operation)
-}
-
-// InTransaction converts an operation with the supplied runner.
-//
-// Deprecated: use [TxRunner.InTransaction].
-func InTransaction[I, O any](runner *TxRunner, operation TxOperation[I, O]) func(context.Context, *I) (O, error) {
-	return runner.InTransaction(operation)
-}

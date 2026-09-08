@@ -35,10 +35,17 @@ type (
 
 // NewUserCrud returns the CRUD handler registration function for the user entity.
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput, UserOutput](&UserTransformer{}))
+	transformer := &UserTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformOutput,
+	)
+
+	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleCrudDefinition(definition))
 }
 
-// UserTransformer implements sqlh.Transformer for the User entity.
+// UserTransformer maps User HTTP values and database entities.
 type UserTransformer struct{}
 
 // TransformCreateInput converts a UserCreateInput DTO into a new User entity.

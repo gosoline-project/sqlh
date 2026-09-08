@@ -498,7 +498,8 @@ func (r *resource[K, E]) deleteEntity[ID sqlr.KeyTypes](
 		return nil, fmt.Errorf("delete input is required")
 	}
 
-	entity, err := r.lookup(ctx, tx, identity, input.ID, resourceLookupScope(input, visibility), r.builderRead)
+	deleteBuilder := composeBuilders(r.builderRead, builderForUpdate)
+	entity, err := r.lookup(ctx, tx, identity, input.ID, resourceLookupScope(input, visibility), deleteBuilder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find entity before delete with id %v: %w", input.ID, err)
 	}
