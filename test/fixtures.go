@@ -59,7 +59,7 @@ var tags = fixtures.NamedFixtures[Tag]{
 var posts = fixtures.NamedFixtures[Post]{
 	fixtures.NewNamedFixture("post_1", Post{
 		Entity:   sqlr.FixtureEntity[int64](1, "2024-01-05T10:00:00Z", "2024-01-05T10:00:00Z"),
-		AuthorID: 1,
+		AuthorId: 1,
 		Title:    "Getting Started with Go",
 		Status:   statusPublished,
 		Tags: []Tag{
@@ -69,7 +69,7 @@ var posts = fixtures.NamedFixtures[Post]{
 	}),
 	fixtures.NewNamedFixture("post_2", Post{
 		Entity:   sqlr.FixtureEntity[int64](2, "2024-01-10T14:00:00Z", "2024-01-10T14:00:00Z"),
-		AuthorID: 1,
+		AuthorId: 1,
 		Title:    titleAdvancedGo,
 		Status:   statusPublished,
 		Tags: []Tag{
@@ -79,7 +79,7 @@ var posts = fixtures.NamedFixtures[Post]{
 	}),
 	fixtures.NewNamedFixture("post_3", Post{
 		Entity:   sqlr.FixtureEntity[int64](3, "2024-01-20T16:00:00Z", "2024-01-20T16:00:00Z"),
-		AuthorID: 2,
+		AuthorId: 2,
 		Title:    "SQL Query Optimization",
 		Status:   statusDraft,
 		Tags: []Tag{

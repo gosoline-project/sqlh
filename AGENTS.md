@@ -115,7 +115,7 @@ Special cases:
 - unexported identifiers use lowerCamelCase
 - receivers stay short and conventional, commonly `h`, `t`, `r`, or `s`
 - prefer descriptive helper and fixture type names in tests
-- use `ID` in your own fields such as `AuthorID` and `ChildID`
+- use `Id` in your own fields such as `AuthorId` and `ChildId`
 - preserve upstream embedded field names like `sqlr.Entity.Id`, `CreatedAt`, and `UpdatedAt`
 - JSON and DB tags use snake_case
 

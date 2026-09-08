@@ -150,12 +150,12 @@ func (r *resource[K, E]) buildCreateOperation[IC, O any](
 	}, nil
 }
 
-func (r *resource[K, E]) buildReadOperation[ID sqlr.KeyTypes, O any](
-	custom TxOperation[InputByID[ID], O],
-	identity IdentityLookup[ID, K, E],
+func (r *resource[K, E]) buildReadOperation[Id sqlr.KeyTypes, O any](
+	custom TxOperation[InputById[Id], O],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	output func(context.Context, *E) (O, error),
-) (TxOperation[InputByID[ID], O], error) {
+) (TxOperation[InputById[Id], O], error) {
 	if custom != nil {
 		return custom, nil
 	}
@@ -163,15 +163,15 @@ func (r *resource[K, E]) buildReadOperation[ID sqlr.KeyTypes, O any](
 		return nil, fmt.Errorf("CRUD output mapper is required")
 	}
 
-	return func(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (O, error) {
+	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
 		var zero O
 		if input == nil {
 			return zero, fmt.Errorf("read input is required")
 		}
 
-		entity, err := r.lookup(ctx, tx, identity, input.ID, resourceLookupScope(input, visibility), r.builderRead)
+		entity, err := r.lookup(ctx, tx, identity, input.Id, resourceLookupScope(input, visibility), r.builderRead)
 		if err != nil {
-			return zero, fmt.Errorf("failed to read entity with id %v: %w", input.ID, err)
+			return zero, fmt.Errorf("failed to read entity with id %v: %w", input.Id, err)
 		}
 
 		result, err := output(ctx, entity)
@@ -183,9 +183,9 @@ func (r *resource[K, E]) buildReadOperation[ID sqlr.KeyTypes, O any](
 	}, nil
 }
 
-func (r *resource[K, E]) buildUpdateOperation[ID sqlr.KeyTypes, IU Identified[ID], O any](
+func (r *resource[K, E]) buildUpdateOperation[Id sqlr.KeyTypes, IU Identified[Id], O any](
 	custom TxOperation[IU, O],
-	identity IdentityLookup[ID, K, E],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	updateInput func(context.Context, *E, *IU) (*E, error),
 	output func(context.Context, *E) (O, error),
@@ -235,16 +235,16 @@ func (r *resource[K, E]) buildUpdateOperation[ID sqlr.KeyTypes, IU Identified[ID
 	}, nil
 }
 
-func (r *resource[K, E]) buildPatchOperation[ID sqlr.KeyTypes, IU Identified[ID], O any](
-	custom TxOperation[PatchInput[ID], O],
-	identity IdentityLookup[ID, K, E],
+func (r *resource[K, E]) buildPatchOperation[Id sqlr.KeyTypes, IU Identified[Id], O any](
+	custom TxOperation[PatchInput[Id], O],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	patchInputFromEntity func(context.Context, *E) (*IU, error),
 	updateInput func(context.Context, *E, *IU) (*E, error),
 	output func(context.Context, *E) (O, error),
 	associationFields map[string]string,
 	associationTriggers map[string]string,
-) (TxOperation[PatchInput[ID], O], error) {
+) (TxOperation[PatchInput[Id], O], error) {
 	if custom != nil {
 		return custom, nil
 	}
@@ -258,16 +258,16 @@ func (r *resource[K, E]) buildPatchOperation[ID sqlr.KeyTypes, IU Identified[ID]
 		return nil, fmt.Errorf("CRUD output mapper is required")
 	}
 
-	return func(ctx context.Context, tx sqlr.TTx, input *PatchInput[ID]) (O, error) {
+	return func(ctx context.Context, tx sqlr.TTx, input *PatchInput[Id]) (O, error) {
 		return r.patch(ctx, tx, input, identity, visibility, patchInputFromEntity, updateInput, output, associationFields, associationTriggers)
 	}, nil
 }
 
-func (r *resource[K, E]) patch[ID sqlr.KeyTypes, IU Identified[ID], O any](
+func (r *resource[K, E]) patch[Id sqlr.KeyTypes, IU Identified[Id], O any](
 	ctx context.Context,
 	tx sqlr.TTx,
-	input *PatchInput[ID],
-	identity IdentityLookup[ID, K, E],
+	input *PatchInput[Id],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	patchInputFromEntity func(context.Context, *E) (*IU, error),
 	updateInput func(context.Context, *E, *IU) (*E, error),
@@ -285,9 +285,9 @@ func (r *resource[K, E]) patch[ID sqlr.KeyTypes, IU Identified[ID], O any](
 		return zero, fmt.Errorf("patch document is required")
 	}
 
-	entity, err := r.lookup(ctx, tx, identity, input.ID, resourceLookupScope(input, visibility), r.builderUpdateRead)
+	entity, err := r.lookup(ctx, tx, identity, input.Id, resourceLookupScope(input, visibility), r.builderUpdateRead)
 	if err != nil {
-		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.ID, err)
+		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.Id, err)
 	}
 
 	completeInput, err := patchInputFromEntity(ctx, entity)
@@ -319,7 +319,7 @@ func (r *resource[K, E]) patch[ID sqlr.KeyTypes, IU Identified[ID], O any](
 
 	entity, err = r.repository.Update(tx, entity, builderPatchWriteFromTags(r.tags.updatePreloadPaths, selectedPaths, r.patchAutoSyncPaths))
 	if err != nil {
-		return zero, fmt.Errorf("failed to update entity with id %v after patch: %w", input.ID, err)
+		return zero, fmt.Errorf("failed to update entity with id %v after patch: %w", input.Id, err)
 	}
 
 	result, err := output(ctx, entity)
@@ -426,17 +426,17 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	return ListOutput[O]{Results: results, Total: total}, nil
 }
 
-func (r *resource[K, E]) buildDeleteOperation[ID sqlr.KeyTypes](
-	custom TxOperation[InputByID[ID], httpserver.Response],
-	identity IdentityLookup[ID, K, E],
+func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes](
+	custom TxOperation[InputById[Id], httpserver.Response],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
-) TxOperation[InputByID[ID], httpserver.Response] {
+) TxOperation[InputById[Id], httpserver.Response] {
 	if custom != nil {
 		return custom
 	}
 
-	return func(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (httpserver.Response, error) {
+	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (httpserver.Response, error) {
 		if _, err := r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy); err != nil {
 			return nil, err
 		}
@@ -445,18 +445,18 @@ func (r *resource[K, E]) buildDeleteOperation[ID sqlr.KeyTypes](
 	}
 }
 
-func (r *resource[K, E]) buildDeleteTypedOperation[ID sqlr.KeyTypes, O any](
-	custom TxOperation[InputByID[ID], O],
-	identity IdentityLookup[ID, K, E],
+func (r *resource[K, E]) buildDeleteTypedOperation[Id sqlr.KeyTypes, O any](
+	custom TxOperation[InputById[Id], O],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
 	output func(context.Context, *E) (O, error),
-) TxOperation[InputByID[ID], O] {
+) TxOperation[InputById[Id], O] {
 	if custom != nil {
 		return custom
 	}
 
-	return func(ctx context.Context, tx sqlr.TTx, input *InputByID[ID]) (O, error) {
+	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
 		var zero O
 
 		entity, err := r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy)
@@ -486,11 +486,11 @@ func (r *resource[K, E]) count(tx sqlr.TTx, plan QueryPlan) (int, error) {
 	return r.repository.Count(tx, qb)
 }
 
-func (r *resource[K, E]) deleteEntity[ID sqlr.KeyTypes](
+func (r *resource[K, E]) deleteEntity[Id sqlr.KeyTypes](
 	ctx context.Context,
 	tx sqlr.TTx,
-	input *InputByID[ID],
-	identity IdentityLookup[ID, K, E],
+	input *InputById[Id],
+	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
 ) (*E, error) {
@@ -499,27 +499,27 @@ func (r *resource[K, E]) deleteEntity[ID sqlr.KeyTypes](
 	}
 
 	deleteBuilder := composeBuilders(r.builderRead, builderForUpdate)
-	entity, err := r.lookup(ctx, tx, identity, input.ID, resourceLookupScope(input, visibility), deleteBuilder)
+	entity, err := r.lookup(ctx, tx, identity, input.Id, resourceLookupScope(input, visibility), deleteBuilder)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find entity before delete with id %v: %w", input.ID, err)
+		return nil, fmt.Errorf("failed to find entity before delete with id %v: %w", input.Id, err)
 	}
 
 	if deleteStrategy != nil {
 		if err = deleteStrategy(ctx, tx, r.repository, entity); err != nil {
-			return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.ID, err)
+			return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.Id, err)
 		}
 	} else if err = r.repository.Delete(tx, (*entity).GetId(), r.builderDelete); err != nil {
-		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.ID, err)
+		return nil, fmt.Errorf("failed to delete entity with id %v: %w", input.Id, err)
 	}
 
 	return entity, nil
 }
 
-func (r *resource[K, E]) lookup[ID sqlr.KeyTypes](
+func (r *resource[K, E]) lookup[Id sqlr.KeyTypes](
 	ctx context.Context,
 	tx sqlr.TTx,
-	identity IdentityLookup[ID, K, E],
-	id ID,
+	identity IdentityLookup[Id, K, E],
+	id Id,
 	scope QueryScope,
 	builder func(*sqlr.QueryBuilderSelect),
 ) (*E, error) {

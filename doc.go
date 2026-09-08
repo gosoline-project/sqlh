@@ -36,7 +36,7 @@
 // # Force filters and lists
 //
 // [ForceFilters] carries server-owned query restrictions. Applications can
-// embed it in [ListInput], [InputByID], or custom update inputs. Force filters
+// embed it in [ListInput], [InputById], or custom update inputs. Force filters
 // are not bound from HTTP input and cannot be removed by user input. Default
 // SQLH operations add them to user filters before pagination and apply them to
 // list, count, identity, update, and delete lookups. A force filter must only

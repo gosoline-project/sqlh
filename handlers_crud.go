@@ -12,22 +12,22 @@ import (
 	"github.com/justtrackio/gosoline/pkg/log"
 )
 
-// InputByID is the standard URI input for operations that address one entity.
+// InputById is the standard URI input for operations that address one entity.
 // It carries force filters so an authorization policy can restrict the lookup
 // before SQLR reads or mutates the entity.
-type InputByID[K sqlr.KeyTypes] struct {
+type InputById[K sqlr.KeyTypes] struct {
 	ForceFilters
-	ID K `uri:"id" json:"-"`
+	Id K `uri:"id" json:"-"`
 }
 
 // GetId returns the URI identity. It is used by update inputs that embed
-// InputByID.
-func (i InputByID[K]) GetId() K {
-	return i.ID
+// InputById.
+func (i InputById[K]) GetId() K {
+	return i.Id
 }
 
 // Identified is the minimum contract for an update input. Embedding
-// [InputByID] is the usual implementation and also supplies the force-filter
+// [InputById] is the usual implementation and also supplies the force-filter
 // carrier used to scope the pre-update lookup.
 type Identified[K sqlr.KeyTypes] interface {
 	ForceFilterSource
@@ -45,11 +45,11 @@ type ListOutput[O any] struct {
 // IdentityLookup replaces SQLH's default primary-key lookup. The supplied
 // builder contains composed relation-tag and definition hooks, while scope must
 // be applied to the query used by the custom lookup.
-type IdentityLookup[ID sqlr.KeyTypes, K sqlr.KeyTypes, E sqlr.Entitier[K]] func(
+type IdentityLookup[Id sqlr.KeyTypes, K sqlr.KeyTypes, E sqlr.Entitier[K]] func(
 	ctx context.Context,
 	tx sqlr.TTx,
 	repository sqlr.RepositoryTx[K, E],
-	id ID,
+	id Id,
 	scope QueryScope,
 	builder func(*sqlr.QueryBuilderSelect),
 ) (*E, error)
@@ -99,9 +99,9 @@ type DeleteScope func(qb *sqlr.QueryBuilderSelect)
 type CrudDefinition[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
 ] struct {
@@ -132,7 +132,7 @@ type CrudDefinition[
 
 	// Identity replaces the default primary-key lookup used by read, update,
 	// patch, and delete. The supplied scope must be applied by custom implementations.
-	Identity IdentityLookup[ID, K, E]
+	Identity IdentityLookup[Id, K, E]
 	// Query replaces the default SQLR list query.
 	Query ListQuery[K, E, LI]
 	// Count replaces the default total calculation.
@@ -147,17 +147,17 @@ type CrudDefinition[
 	// PatchOperation replace their corresponding default operation after
 	// transaction setup.
 	CreateOperation TxOperation[IC, O]
-	ReadOperation   TxOperation[InputByID[ID], O]
+	ReadOperation   TxOperation[InputById[Id], O]
 	UpdateOperation TxOperation[IU, O]
-	PatchOperation  TxOperation[PatchInput[ID], O]
+	PatchOperation  TxOperation[PatchInput[Id], O]
 	ListOperation   TxOperation[LI, ListOutput[O]]
 	// DeleteOperation is an escape hatch for custom delete output/status. The
 	// default operation returns an explicit 204 response.
-	DeleteOperation TxOperation[InputByID[ID], httpserver.Response]
+	DeleteOperation TxOperation[InputById[Id], httpserver.Response]
 	// DeleteTypedOperation customizes the typed delete operation used by
 	// [DeleteTyped]. It is useful for soft-delete flows that should return an
 	// ordinary negotiated output instead of the default 204 response.
-	DeleteTypedOperation TxOperation[InputByID[ID], O]
+	DeleteTypedOperation TxOperation[InputById[Id], O]
 
 	// SQLR builder hooks. Relation tags are always composed before these hooks.
 	BuilderCreate      func(*sqlr.QueryBuilderCreate)
@@ -174,25 +174,25 @@ type CrudDefinition[
 type CrudDefinitionFactory[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-] func(ctx context.Context, config cfg.Config, logger log.Logger) (CrudDefinition[K, E, ID, IC, IU, LI, O], error)
+] func(ctx context.Context, config cfg.Config, logger log.Logger) (CrudDefinition[K, E, Id, IC, IU, LI, O], error)
 
 // SimpleCrudDefinition wraps a static definition in the standard gosoline
 // factory shape.
 func SimpleCrudDefinition[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-](definition CrudDefinition[K, E, ID, IC, IU, LI, O]) CrudDefinitionFactory[K, E, ID, IC, IU, LI, O] {
-	return func(context.Context, cfg.Config, log.Logger) (CrudDefinition[K, E, ID, IC, IU, LI, O], error) {
+](definition CrudDefinition[K, E, Id, IC, IU, LI, O]) CrudDefinitionFactory[K, E, Id, IC, IU, LI, O] {
+	return func(context.Context, cfg.Config, log.Logger) (CrudDefinition[K, E, Id, IC, IU, LI, O], error) {
 		return definition, nil
 	}
 }
@@ -202,17 +202,17 @@ func SimpleCrudDefinition[
 func NewCrudDefinition[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	O any,
 ](
 	createInput func(context.Context, *IC) (*E, error),
 	updateInput func(context.Context, *E, *IU) (*E, error),
 	patchInputFromEntity func(context.Context, *E) (*IU, error),
 	output func(context.Context, *E) (O, error),
-) CrudDefinition[K, E, ID, IC, IU, ListInput, O] {
-	return CrudDefinition[K, E, ID, IC, IU, ListInput, O]{
+) CrudDefinition[K, E, Id, IC, IU, ListInput, O] {
+	return CrudDefinition[K, E, Id, IC, IU, ListInput, O]{
 		CreateInput:          createInput,
 		UpdateInput:          updateInput,
 		PatchInputFromEntity: patchInputFromEntity,
@@ -225,33 +225,33 @@ func NewCrudDefinition[
 type CrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
 ] struct {
 	resource *resource[K, E]
 
-	patchOperation       TxOperation[PatchInput[ID], O]
+	patchOperation       TxOperation[PatchInput[Id], O]
 	createOperation      TxOperation[IC, O]
-	readOperation        TxOperation[InputByID[ID], O]
+	readOperation        TxOperation[InputById[Id], O]
 	updateOperation      TxOperation[IU, O]
 	listOperation        TxOperation[LI, ListOutput[O]]
-	deleteOperation      TxOperation[InputByID[ID], httpserver.Response]
-	deleteTypedOperation TxOperation[InputByID[ID], O]
+	deleteOperation      TxOperation[InputById[Id], httpserver.Response]
+	deleteTypedOperation TxOperation[InputById[Id], O]
 }
 
 // NewCrudHandler creates a handler factory for a typed CRUD definition.
 func NewCrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-](definitionFactory CrudDefinitionFactory[K, E, ID, IC, IU, LI, O], options ...Option[K, E]) httpserver.HandlerFactory[CrudHandler[K, E, ID, IC, IU, LI, O]] {
+](definitionFactory CrudDefinitionFactory[K, E, Id, IC, IU, LI, O], options ...Option[K, E]) httpserver.HandlerFactory[CrudHandler[K, E, Id, IC, IU, LI, O]] {
 	opts := newOpts[K, E]()
 	for _, option := range options {
 		if option != nil {
@@ -259,7 +259,7 @@ func NewCrudHandler[
 		}
 	}
 
-	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*CrudHandler[K, E, ID, IC, IU, LI, O], error) {
+	return func(ctx context.Context, config cfg.Config, logger log.Logger) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
 		if definitionFactory == nil {
 			return nil, fmt.Errorf("CRUD definition factory is required")
 		}
@@ -305,12 +305,12 @@ func NewCrudHandler[
 func newCrudHandler[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, ID, IC, IU, LI, O]) (*CrudHandler[K, E, ID, IC, IU, LI, O], error) {
+](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, Id, IC, IU, LI, O]) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
 	res, err := newResource(repository, runner, schema, resourceBuilderHooks{
 		create:      definition.BuilderCreate,
 		read:        definition.BuilderRead,
@@ -358,7 +358,7 @@ func newCrudHandler[
 		return nil, err
 	}
 
-	return &CrudHandler[K, E, ID, IC, IU, LI, O]{
+	return &CrudHandler[K, E, Id, IC, IU, LI, O]{
 		resource:             res,
 		createOperation:      createOperation,
 		readOperation:        readOperation,
@@ -372,37 +372,37 @@ func newCrudHandler[
 
 // Create executes the create operation in a transaction and returns the typed
 // output only after the transaction commits.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.createOperation)
 }
 
 // Read executes a scoped identity lookup in a transaction and returns the
 // typed output only after the transaction commits.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Read(ctx context.Context, input *InputByID[ID]) (O, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Read(ctx context.Context, input *InputById[Id]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.readOperation)
 }
 
 // Update performs a scoped identity lookup, applies the update mapper, and
 // persists the entity in one transaction.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.updateOperation)
 }
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[ID]) (O, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[Id]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.patchOperation)
 }
 
 // List queries and counts entities using one shared filter scope, then maps the
 // results to the typed list output.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
 	return h.resource.runner.RunValue(ctx, input, h.listOperation)
 }
 
 // Delete performs a scoped identity lookup and then uses the configured delete
 // strategy. The default response is 204 No Content.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input *InputByID[ID]) (httpserver.Response, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input *InputById[Id]) (httpserver.Response, error) {
 	return h.resource.runner.RunValue(ctx, input, h.deleteOperation)
 }
 
@@ -410,13 +410,13 @@ func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Delete(ctx context.Context, input
 // output. Bind this operation directly when a soft-delete endpoint should use
 // response negotiation; the standard [Delete] operation remains a 204 escape
 // hatch for conventional physical deletes.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputByID[ID]) (O, error) {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputById[Id]) (O, error) {
 	return h.resource.runner.RunValue(ctx, input, h.deleteTypedOperation)
 }
 
 // Close releases resources held by the SQLR repository, including prepared
 // statements when repository prepared statements are enabled.
-func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Close() error {
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Close() error {
 	if h == nil || h.resource == nil {
 		return nil
 	}
@@ -429,13 +429,13 @@ func (h *CrudHandler[K, E, ID, IC, IU, LI, O]) Close() error {
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
-	ID sqlr.KeyTypes,
+	Id sqlr.KeyTypes,
 	IC any,
-	IU Identified[ID],
+	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-](version int, entityName string, definitionFactory CrudDefinitionFactory[K, E, ID, IC, IU, LI, O], options ...Option[K, E]) httpserver.RegisterFactoryFunc {
-	return httpserver.With(NewCrudHandler(definitionFactory, options...), func(router *httpserver.Router, handler *CrudHandler[K, E, ID, IC, IU, LI, O]) {
+](version int, entityName string, definitionFactory CrudDefinitionFactory[K, E, Id, IC, IU, LI, O], options ...Option[K, E]) httpserver.RegisterFactoryFunc {
+	return httpserver.With(NewCrudHandler(definitionFactory, options...), func(router *httpserver.Router, handler *CrudHandler[K, E, Id, IC, IU, LI, O]) {
 		path := fmt.Sprintf("/v%d/%s", version, entityName)
 		router.POST(path, httpserver.Bind(handler.Create))
 		router.GET(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Read, httpserver.NoBodyBinding{}))
