@@ -249,7 +249,7 @@ func (r *resource[K, E]) buildPatchOperation[ID sqlr.KeyTypes, IU Identified[ID]
 		return custom, nil
 	}
 	if patchInputFromEntity == nil {
-		return nil, nil
+		return nil, fmt.Errorf("CRUD patch input from entity mapper is required")
 	}
 	if updateInput == nil {
 		return nil, fmt.Errorf("CRUD update input mapper is required for default patch operation")

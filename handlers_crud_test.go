@@ -57,7 +57,7 @@ func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 
 			return entity, nil
 		},
-		nil,
+		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -108,7 +108,7 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 
 			return entity, nil
 		},
-		nil,
+		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -149,7 +149,7 @@ func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 
 			return entity, nil
 		},
-		nil,
+		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -166,6 +166,13 @@ func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 	output, err := handler.DeleteTyped(context.Background(), &InputByID[int]{ID: 9})
 	require.NoError(t, err)
 	require.Equal(t, crudTestOutput{ID: 9, Name: "deleted"}, output)
+}
+
+func crudTestPatchInputFromEntity(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
+	return &crudTestUpdateInput{
+		InputByID: InputByID[int]{ID: entity.Id},
+		Name:      entity.Name,
+	}, nil
 }
 
 func newTestTx(t *testing.T) *sqlcmocks.Tx {
