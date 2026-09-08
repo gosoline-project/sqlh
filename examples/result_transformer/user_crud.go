@@ -15,7 +15,7 @@ type (
 		Name string `json:"name"`
 	}
 	UserUpdateInput struct {
-		sqlh.InputByID[int]
+		sqlh.InputById[int]
 		Name string `json:"name"`
 	}
 	User struct {
@@ -64,7 +64,7 @@ func (t *UserTransformer) TransformUpdateInput(ctx context.Context, user *User, 
 
 func (t *UserTransformer) TransformPatchInputFromEntity(_ context.Context, user *User) (*UserUpdateInput, error) {
 	return &UserUpdateInput{
-		InputByID: sqlh.InputByID[int]{ID: user.Id},
+		InputById: sqlh.InputById[int]{Id: user.Id},
 		Name:      user.Name,
 	}, nil
 }

@@ -17,7 +17,7 @@ import (
 // The request body is retained as a PatchDocument so SQLH can distinguish
 // omitted fields from fields explicitly supplied as null.
 type PatchInput[K sqlr.KeyTypes] struct {
-	InputByID[K]
+	InputById[K]
 	document PatchDocument
 }
 

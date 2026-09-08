@@ -15,13 +15,13 @@ type tagNestedEntity struct {
 
 type tagChildEntity struct {
 	sqlr.Entity[int64]
-	ParentID int64             `db:"parent_id"`
+	ParentId int64             `db:"parent_id"`
 	Nested   []tagNestedEntity `db:"-" sqlr:"foreignKey:child_id" sqlh:"preload:create,read;sync:update"`
 }
 
 type tagRootEntity struct {
 	sqlr.Entity[int64]
-	ChildID int64            `db:"child_id"`
+	ChildId int64            `db:"child_id"`
 	Name    string           `db:"name"`
 	Child   tagChildEntity   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:create,read,update"`
 	Tags    []tagChildEntity `db:"-" sqlr:"foreignKey:root_id" sqlh:"preload:create;sync:create,update,delete"`
@@ -40,13 +40,13 @@ type invalidTaggedValueEntity struct {
 
 type invalidDirectiveEntity struct {
 	sqlr.Entity[int64]
-	ChildID int64          `db:"child_id"`
+	ChildId int64          `db:"child_id"`
 	Child   tagChildEntity `db:"-" sqlr:"belongsTo:child_id" sqlh:"unknown:read"`
 }
 
 type invalidDirectivePhaseEntity struct {
 	sqlr.Entity[int64]
-	ChildID int64          `db:"child_id"`
+	ChildId int64          `db:"child_id"`
 	Child   tagChildEntity `db:"-" sqlr:"belongsTo:child_id" sqlh:"sync:read"`
 }
 
@@ -57,7 +57,7 @@ type autoRelationChild struct {
 
 type autoRelationParent struct {
 	sqlr.Entity[int64]
-	ChildID int64             `db:"child_id"`
+	ChildId int64             `db:"child_id"`
 	Child   autoRelationChild `sqlh:"preload:read"`
 }
 

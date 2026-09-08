@@ -26,7 +26,7 @@ type patchTestTarget struct {
 }
 
 type patchTestAssociationInput struct {
-	InputByID[int]
+	InputById[int]
 	Tags  []int `json:"tags"`
 	Other []int `json:"other"`
 }
@@ -80,7 +80,7 @@ func TestPatchDocumentTracksPresenceAndNull(t *testing.T) {
 }
 
 func TestPatchInputStoresDocumentAndRetainsURIIdentity(t *testing.T) {
-	input := PatchInput[int]{InputByID: InputByID[int]{ID: 9}}
+	input := PatchInput[int]{InputById: InputById[int]{Id: 9}}
 
 	require.NoError(t, json.Unmarshal([]byte(`{"name":"updated"}`), &input))
 	require.Equal(t, 9, input.GetId())
@@ -159,22 +159,22 @@ func TestCrudHandlerPatchAppliesMergePatchInTransaction(t *testing.T) {
 		},
 		func(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
 			return &crudTestUpdateInput{
-				InputByID: InputByID[int]{ID: entity.Id},
+				InputById: InputById[int]{Id: entity.Id},
 				Name:      entity.Name,
 			}, nil
 		},
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
-			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
 		},
 	)
 
 	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
-	input := PatchInput[int]{InputByID: InputByID[int]{ID: 7}}
+	input := PatchInput[int]{InputById: InputById[int]{Id: 7}}
 	require.NoError(t, json.Unmarshal([]byte(`{"name":""}`), &input))
 
 	output, err := handler.Patch(context.Background(), &input)
 	require.NoError(t, err)
-	require.Equal(t, crudTestOutput{ID: 7, Name: ""}, output)
+	require.Equal(t, crudTestOutput{Id: 7, Name: ""}, output)
 }

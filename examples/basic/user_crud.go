@@ -18,7 +18,7 @@ type (
 		Name string `json:"name"`
 	}
 	UserUpdateInput struct {
-		sqlh.InputByID[int]
+		sqlh.InputById[int]
 		Name string `json:"name"`
 	}
 	User struct {
@@ -26,7 +26,7 @@ type (
 		Name string
 	}
 	UserOutput struct {
-		ID        int       `json:"id"`
+		Id        int       `json:"id"`
 		Name      string    `json:"name"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
@@ -66,7 +66,7 @@ func (t *UserTransformer) TransformUpdateInput(ctx context.Context, user *User, 
 // TransformPatchInputFromEntity maps a User to the complete update input used by PATCH.
 func (t *UserTransformer) TransformPatchInputFromEntity(_ context.Context, user *User) (*UserUpdateInput, error) {
 	return &UserUpdateInput{
-		InputByID: sqlh.InputByID[int]{ID: user.Id},
+		InputById: sqlh.InputById[int]{Id: user.Id},
 		Name:      user.Name,
 	}, nil
 }
@@ -77,7 +77,7 @@ func (t *UserTransformer) TransformOutput(_ context.Context, user *User) (UserOu
 
 func (t *UserTransformer) toOutput(user *User) UserOutput {
 	return UserOutput{
-		ID:        user.Id,
+		Id:        user.Id,
 		Name:      user.Name,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,

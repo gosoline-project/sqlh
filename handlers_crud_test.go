@@ -23,12 +23,12 @@ type crudTestCreateInput struct {
 }
 
 type crudTestUpdateInput struct {
-	InputByID[int]
+	InputById[int]
 	Name string `json:"name"`
 }
 
 type crudTestOutput struct {
-	ID   int    `json:"id"`
+	Id   int    `json:"id"`
 	Name string `json:"name"`
 }
 
@@ -59,14 +59,14 @@ func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 		},
 		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
-			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
 		},
 	))
 	require.NoError(t, err)
 
 	output, err := handler.Create(context.Background(), &crudTestCreateInput{Name: "created"})
 	require.NoError(t, err)
-	require.Equal(t, crudTestOutput{ID: 7, Name: "created"}, output)
+	require.Equal(t, crudTestOutput{Id: 7, Name: "created"}, output)
 }
 
 func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
@@ -110,19 +110,19 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 		},
 		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
-			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
 		},
 	))
 	require.NoError(t, err)
 
-	input := &InputByID[int]{ID: 3}
+	input := &InputById[int]{Id: 3}
 	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
 		qb.Where("account_id = ?", 42)
 	})
 
 	output, err := handler.Read(context.Background(), input)
 	require.NoError(t, err)
-	require.Equal(t, crudTestOutput{ID: 3, Name: "scoped"}, output)
+	require.Equal(t, crudTestOutput{Id: 3, Name: "scoped"}, output)
 }
 
 func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
@@ -151,7 +151,7 @@ func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 		},
 		crudTestPatchInputFromEntity,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
-			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
 		},
 	)
 	definition.Delete = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], entity *crudTestEntity) error {
@@ -163,14 +163,14 @@ func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
-	output, err := handler.DeleteTyped(context.Background(), &InputByID[int]{ID: 9})
+	output, err := handler.DeleteTyped(context.Background(), &InputById[int]{Id: 9})
 	require.NoError(t, err)
-	require.Equal(t, crudTestOutput{ID: 9, Name: "deleted"}, output)
+	require.Equal(t, crudTestOutput{Id: 9, Name: "deleted"}, output)
 }
 
 func crudTestPatchInputFromEntity(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
 	return &crudTestUpdateInput{
-		InputByID: InputByID[int]{ID: entity.Id},
+		InputById: InputById[int]{Id: entity.Id},
 		Name:      entity.Name,
 	}, nil
 }
