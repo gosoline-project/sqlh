@@ -207,7 +207,7 @@ func (r *resource[K, E]) buildUpdateOperation[ID sqlr.KeyTypes, IU Identified[ID
 		}
 
 		value := *input
-		id := value.GetID()
+		id := value.GetId()
 		entity, err := r.lookup(ctx, tx, identity, id, resourceLookupScope(value, visibility), r.builderUpdateRead)
 		if err != nil {
 			return zero, fmt.Errorf("failed to read entity before update with id %v: %w", id, err)

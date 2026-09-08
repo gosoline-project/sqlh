@@ -25,38 +25,14 @@ type ForceFilters struct {
 	filters []ForceFilter
 }
 
-// AddForceFilter adds one or more server-owned query restrictions. Nil filters
-// are ignored so callers can build optional scopes without branching.
+// AddForceFilter adds server-owned query restrictions.
 func (f *ForceFilters) AddForceFilter(filters ...ForceFilter) {
-	if f == nil {
-		return
-	}
-
-	for _, filter := range filters {
-		if filter != nil {
-			f.filters = append(f.filters, filter)
-		}
-	}
-}
-
-// filtersCopy returns a defensive copy without relying on the promoted
-// ForceFilters method, which is shadowed by the embedded field on request
-// inputs.
-func (f ForceFilters) filtersCopy() []ForceFilter {
-	return append([]ForceFilter(nil), f.filters...)
+	f.filters = append(f.filters, filters...)
 }
 
 // GetForceFilters returns a copy of the filters currently stored on the carrier.
 func (f ForceFilters) GetForceFilters() []ForceFilter {
-	return f.filtersCopy()
-}
-
-// ForceFilters returns a copy of the filters currently stored on the carrier.
-// It is retained on the carrier itself for direct use; request input types
-// expose the unambiguous GetForceFilters method because their embedded field is
-// named ForceFilters.
-func (f ForceFilters) ForceFilters() []ForceFilter {
-	return f.filtersCopy()
+	return append([]ForceFilter(nil), f.filters...)
 }
 
 // ListPage contains the limit and offset for a list request.
@@ -73,11 +49,6 @@ type ListInput struct {
 
 	Filter sqlc.JsonFilter `json:"filter"`
 	Page   ListPage        `json:"page,omitempty"`
-}
-
-// GetForceFilters returns a copy of the server-owned filters carried by the list input.
-func (i ListInput) GetForceFilters() []ForceFilter {
-	return i.filtersCopy()
 }
 
 // ApplyFilters applies all server-owned force filters before the user filter. It
@@ -153,8 +124,6 @@ func applyForceFilters(source ForceFilterSource, qb *sqlr.QueryBuilderSelect) {
 	}
 
 	for _, filter := range source.GetForceFilters() {
-		if filter != nil {
-			filter(qb)
-		}
+		filter(qb)
 	}
 }
