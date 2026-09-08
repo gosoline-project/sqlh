@@ -32,7 +32,7 @@ type crudTestOutput struct {
 	Name string `json:"name"`
 }
 
-func TestCRUDCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
+func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
@@ -48,7 +48,7 @@ func TestCRUDCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
-	handler, err := newCRUD(repository, runner, schema, NewCrudDefinition(
+	handler, err := newCrudHandler(repository, runner, schema, NewCrudDefinition(
 		func(_ context.Context, input *crudTestCreateInput) (*crudTestEntity, error) {
 			return &crudTestEntity{Name: input.Name}, nil
 		},
@@ -57,6 +57,7 @@ func TestCRUDCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 
 			return entity, nil
 		},
+		nil,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -68,7 +69,7 @@ func TestCRUDCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 	require.Equal(t, crudTestOutput{ID: 7, Name: "created"}, output)
 }
 
-func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
+func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
@@ -98,7 +99,7 @@ func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
 	require.NoError(t, err)
-	handler, err := newCRUD(repository, runner, schema, NewCrudDefinition(
+	handler, err := newCrudHandler(repository, runner, schema, NewCrudDefinition(
 		func(_ context.Context, input *crudTestCreateInput) (*crudTestEntity, error) {
 			return &crudTestEntity{Name: input.Name}, nil
 		},
@@ -107,6 +108,7 @@ func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 
 			return entity, nil
 		},
+		nil,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -123,7 +125,7 @@ func TestCRUDReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 	require.Equal(t, crudTestOutput{ID: 3, Name: "scoped"}, output)
 }
 
-func TestCRUDDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
+func TestCrudHandlerDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
@@ -147,6 +149,7 @@ func TestCRUDDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 
 			return entity, nil
 		},
+		nil,
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{ID: entity.Id, Name: entity.Name}, nil
 		},
@@ -157,7 +160,7 @@ func TestCRUDDeleteTypedUsesSoftDeleteStrategy(t *testing.T) {
 		return nil
 	}
 
-	handler, err := newCRUD(repository, runner, schema, definition)
+	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
 	output, err := handler.DeleteTyped(context.Background(), &InputByID[int]{ID: 9})

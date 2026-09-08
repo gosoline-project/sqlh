@@ -5,7 +5,7 @@ import (
 	"github.com/gosoline-project/sqlr"
 )
 
-// Option configures how [NewCRUD] and [WithCrudHandlers] create a CRUD handler.
+// Option configures how [NewCrudHandler] and [WithCrudHandlers] create a CRUD handler.
 type Option[K sqlr.KeyTypes, E sqlr.Entitier[K]] func(opts *handlerOptions[K, E])
 
 // RepositoryTxFactory creates the transaction-aware SQLR repository used by a
