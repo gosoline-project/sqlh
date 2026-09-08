@@ -217,11 +217,26 @@ func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post
 }
 
 func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleTransformer[int64, Post, PostCreateInput, PostUpdateInput, PostOutput](&PostTransformer{}))
+	transformer := &PostTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformOutput,
+	)
+	definition.PatchInputFromEntity = transformer.TransformPatchInputFromEntity
+
+	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleCrudDefinition(definition))
 }
 
 func NewMutationPreloadPostCrud() gosolinehttpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(1, "preload-post", sqlh.SimpleTransformer[int64, MutationPreloadPost, MutationPreloadPostCreateInput, MutationPreloadPostUpdateInput, MutationPreloadPostOutput](&MutationPreloadPostTransformer{}))
+	transformer := &MutationPreloadPostTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformOutput,
+	)
+
+	return sqlh.WithCrudHandlers(1, "preload-post", sqlh.SimpleCrudDefinition(definition))
 }
 
 func inputTagsToTags(inputTags []PostInputTag) []Tag {

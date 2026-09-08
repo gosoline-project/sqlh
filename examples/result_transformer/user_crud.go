@@ -34,12 +34,17 @@ type (
 
 // snippet-start: crud
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput, UserOutput](&UserTransformer{}))
+	transformer := &UserTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformOutput,
+	)
+
+	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleCrudDefinition(definition))
 }
 
 // snippet-end: crud
-
-var _ sqlh.Transformer[int, User, UserCreateInput, UserUpdateInput, UserOutput] = (*UserTransformer)(nil)
 
 // snippet-start: transformer
 type UserTransformer struct{}
