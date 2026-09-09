@@ -69,7 +69,7 @@ func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 	require.Equal(t, crudTestOutput{Id: 7, Name: "created"}, output)
 }
 
-func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
+func TestCrudHandlerReadAppliesForceFiltersAndBuilderHookToIdentityLookup(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
@@ -83,7 +83,7 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 			option(qb)
 		}
 
-		query, _, err := qb.ToSql()
+		query, arguments, err := qb.ToSql()
 		if err != nil {
 			return nil, err
 		}
@@ -93,13 +93,17 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 		if !strings.Contains(query, "account_id") {
 			return nil, errors.New("force filter missing from lookup")
 		}
+		if !strings.Contains(query, "definition_builder") {
+			return nil, errors.New("definition builder hook missing from lookup")
+		}
+		require.Equal(t, []any{3, 42, "applied"}, arguments)
 
 		return []crudTestEntity{{Entity: sqlr.Entity[int]{Id: 3}, Name: "scoped"}}, nil
 	}).Once()
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
 	require.NoError(t, err)
-	handler, err := newCrudHandler(repository, runner, schema, NewCrudDefinition(
+	definition := NewCrudDefinition(
 		func(_ context.Context, input *crudTestCreateInput) (*crudTestEntity, error) {
 			return &crudTestEntity{Name: input.Name}, nil
 		},
@@ -112,7 +116,12 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
 			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
 		},
-	))
+	)
+	definition.BuilderRead = func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("definition_builder = ?", "applied")
+	}
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
 	input := &InputById[int]{Id: 3}
