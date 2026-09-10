@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
+func TestListInputAppliesUserFilterWithoutPagination(t *testing.T) {
 	input := ListInput{
 		Filter: sqlc.JsonFilter{
 			Type:   "eq",
@@ -17,9 +17,6 @@ func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
 			Value:  "active",
 		},
 	}
-	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
-		qb.Where(sqlc.Col("account_id").Eq(42))
-	})
 
 	qb := sqlr.NewQueryBuilderSelect()
 	require.NoError(t, input.ApplyFilters(qb))
@@ -27,8 +24,7 @@ func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
 	query, params, err := qb.ToSql()
 	require.NoError(t, err)
 	require.Contains(t, query, "status")
-	require.Contains(t, query, "account_id")
-	require.ElementsMatch(t, []any{"active", 42}, params)
+	require.Equal(t, []any{"active"}, params)
 
 	input.Page.Limit = 10
 	input.Page.Offset = 20
@@ -36,7 +32,7 @@ func TestListInputAppliesUserAndForceFiltersWithoutPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, query, "LIMIT")
 	require.NotContains(t, query, "OFFSET")
-	require.Len(t, params, 2)
+	require.Len(t, params, 1)
 }
 
 func TestListInputAppliesPaginationSeparately(t *testing.T) {

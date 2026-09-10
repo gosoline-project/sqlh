@@ -334,22 +334,15 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	if err := value.ValidatePagination(); err != nil {
 		return ListOutput[O]{}, err
 	}
-	if err := value.ApplyFilters(sqlr.NewQueryBuilderSelect()); err != nil {
-		return ListOutput[O]{}, fmt.Errorf("failed to validate list filters: %w", err)
-	}
 
 	plan := QueryPlan{
-		ApplyBuilder: r.builderQuery,
-		ApplyScope: func(qb *sqlr.QueryBuilderSelect) error {
-			if visibility != nil {
-				visibility(qb)
-			}
-
-			return value.ApplyFilters(qb)
-		},
-		ApplyPagination: func(qb *sqlr.QueryBuilderSelect) {
-			value.ApplyPagination(qb)
-		},
+		ApplyBuilder: composeBuilders(r.builderQuery),
+		ApplyScope: composeScopes(
+			deleteScope(visibility),
+			forceScope(value),
+			value.ApplyFilters,
+		),
+		ApplyPagination: value.ApplyPagination,
 	}
 
 	var entities []E
@@ -367,8 +360,8 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 			}
 			plan.ApplyPagination(qb)
 		})
-		if err == nil {
-			err = queryErr
+		if queryErr != nil {
+			return ListOutput[O]{}, queryErr
 		}
 	}
 	if err != nil {
@@ -395,39 +388,18 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	return ListOutput[O]{Results: results, Total: total}, nil
 }
 
-func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes, O any](
+func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes](
 	custom TxOperation[InputById[Id], *E],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
-	output func(context.Context, *E) (O, error),
-) TxOperation[InputById[Id], O] {
-	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
-		var zero O
-		var entity *E
-		var err error
+) TxOperation[InputById[Id], *E] {
+	if custom != nil {
+		return custom
+	}
 
-		if custom != nil {
-			entity, err = custom(ctx, tx, input)
-		} else {
-			entity, err = r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy)
-		}
-		if err != nil {
-			return zero, err
-		}
-		if output == nil {
-			return zero, nil
-		}
-		if entity == nil {
-			return zero, fmt.Errorf("delete operation returned a nil entity")
-		}
-
-		result, err := output(ctx, entity)
-		if err != nil {
-			return zero, fmt.Errorf("failed to transform deleted entity: %w", err)
-		}
-
-		return result, nil
+	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (*E, error) {
+		return r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy)
 	}
 }
 

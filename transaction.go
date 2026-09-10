@@ -71,11 +71,11 @@ func (r *TxRunner) Run(ctx context.Context, operation func(sqlr.TTx) error) (err
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
-	commitAttempted := false
+	commitReturned := false
 	defer func() {
 		recovered := recover()
 		if recovered != nil {
-			if !commitAttempted {
+			if !commitReturned {
 				if rollbackErr := tx.Rollback(); rollbackErr != nil {
 					panic(fmt.Errorf("failed to rollback transaction after panic %v: %w", recovered, rollbackErr))
 				}
@@ -83,7 +83,7 @@ func (r *TxRunner) Run(ctx context.Context, operation func(sqlr.TTx) error) (err
 
 			panic(recovered)
 		}
-		if err == nil || commitAttempted {
+		if err == nil || commitReturned {
 			return
 		}
 
@@ -100,10 +100,12 @@ func (r *TxRunner) Run(ctx context.Context, operation func(sqlr.TTx) error) (err
 		return err
 	}
 
-	commitAttempted = true
 	if err = tx.Commit(); err != nil {
+		commitReturned = true
+
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+	commitReturned = true
 
 	return nil
 }

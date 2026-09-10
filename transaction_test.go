@@ -72,16 +72,33 @@ func TestTxRunnerRollsBackOperationErrors(t *testing.T) {
 	require.ErrorIs(t, err, operationErr)
 }
 
-func TestTxRunnerRollsBackPanics(t *testing.T) {
+func TestTxRunnerRollsBackOperationPanics(t *testing.T) {
 	tx := &transactionTestTx{Tx: sqlcmocks.NewTx(t)}
 	tx.EXPECT().Rollback().Return(nil).Once()
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
 	require.NoError(t, err)
 
-	require.Panics(t, func() {
+	require.PanicsWithValue(t, "operation panicked", func() {
 		require.NoError(t, runner.Run(context.Background(), func(_ sqlr.TTx) error {
 			panic("operation panicked")
+		}))
+	})
+}
+
+func TestTxRunnerRollsBackCommitPanics(t *testing.T) {
+	tx := &transactionTestTx{Tx: sqlcmocks.NewTx(t)}
+	tx.EXPECT().Commit().Run(func() {
+		panic("commit panicked")
+	}).Return(nil).Once()
+	tx.EXPECT().Rollback().Return(nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+
+	require.PanicsWithValue(t, "commit panicked", func() {
+		require.NoError(t, runner.Run(context.Background(), func(_ sqlr.TTx) error {
+			return nil
 		}))
 	})
 }
