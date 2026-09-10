@@ -100,12 +100,13 @@
 //
 // Physical SQLR deletion is the default. Applications can provide an explicit
 // soft-delete strategy. DeleteOutput can use the same mapper as Output to return
-// a negotiated result:
+// a negotiated result from Delete:
 //
 //	definition.DeleteOutput = definition.Output
 //
-// When DeleteOutput is nil, Delete returns 204 No Content. SQLH does not infer
-// soft deletion from field names.
+// DeleteNoContent uses the same delete operation but skips output mapping and
+// returns 204 No Content. The standard CRUD routes use DeleteNoContent. SQLH
+// does not infer soft deletion from field names.
 //
 // # Errors and domain behavior
 //

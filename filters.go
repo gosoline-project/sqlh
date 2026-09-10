@@ -51,14 +51,12 @@ type ListInput struct {
 	Page   ListPage        `json:"page,omitempty"`
 }
 
-// ApplyFilters applies all server-owned force filters before the user filter. It
-// does not apply pagination, so the same scope can be reused for a count query.
+// ApplyFilters applies the user filter without pagination. SQLH applies force
+// filters separately through QueryPlan.ApplyScope.
 func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 	if qb == nil {
 		return fmt.Errorf("query builder is nil")
 	}
-
-	applyForceFilters(i, qb)
 
 	expression, err := i.Filter.ToExpression()
 	if err != nil {
@@ -111,7 +109,7 @@ type QueryScope func(qb *sqlr.QueryBuilderSelect) error
 // QueryPlan exposes the SQLR relation-tag builder, shared list scope, and page
 // application functions to custom query and count callbacks.
 type QueryPlan struct {
-	// ApplyBuilder installs relation-tag defaults.
+	// ApplyBuilder installs relation-tag defaults. It is always safe to call.
 	ApplyBuilder    func(qb *sqlr.QueryBuilderSelect)
 	ApplyScope      QueryScope
 	ApplyPagination func(qb *sqlr.QueryBuilderSelect)

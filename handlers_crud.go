@@ -156,9 +156,9 @@ type CrudDefinition[
 	// the entity used by DeleteOutput. When it is nil, SQLH uses the configured
 	// identity, scope, and delete strategy.
 	DeleteOperation TxOperation[InputById[Id], *E]
-	// DeleteOutput maps the deleted entity to the negotiated response value. It
-	// has the same signature as Output, so callers can assign Output directly.
-	// When it is nil, Delete returns 204 No Content.
+	// DeleteOutput maps the deleted entity to the negotiated response value used
+	// by Delete. It has the same signature as Output, so callers can assign
+	// Output directly. DeleteNoContent does not call this mapper.
 	DeleteOutput func(context.Context, *E) (O, error)
 }
 
@@ -232,8 +232,8 @@ type CrudHandler[
 	readOperation   TxOperation[InputById[Id], O]
 	updateOperation TxOperation[IU, O]
 	listOperation   TxOperation[LI, ListOutput[O]]
-	deleteOperation TxOperation[InputById[Id], O]
-	deleteHasOutput bool
+	deleteOperation TxOperation[InputById[Id], *E]
+	deleteOutput    func(context.Context, *E) (O, error)
 }
 
 // NewCrudHandler creates a handler factory for a typed CRUD definition.
@@ -352,8 +352,8 @@ func newCrudHandler[
 		updateOperation: updateOperation,
 		patchOperation:  patchOperation,
 		listOperation:   listOperation,
-		deleteOperation: res.buildDeleteOperation(definition.DeleteOperation, definition.Identity, definition.DeleteScope, definition.Delete, definition.DeleteOutput),
-		deleteHasOutput: definition.DeleteOutput != nil,
+		deleteOperation: res.buildDeleteOperation(definition.DeleteOperation, definition.Identity, definition.DeleteScope, definition.Delete),
+		deleteOutput:    definition.DeleteOutput,
 	}, nil
 }
 
@@ -387,15 +387,37 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) List(ctx context.Context, input *
 	return h.resource.runner.RunValue(ctx, input, h.listOperation)
 }
 
-// Delete performs a scoped identity lookup and then uses the configured delete
-// strategy. It returns 204 No Content unless DeleteOutput is configured.
-func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input *InputById[Id]) (any, error) {
-	output, err := h.resource.runner.RunValue(ctx, input, h.deleteOperation)
-	if err != nil {
-		return nil, err
+// Delete performs the configured delete operation and maps its entity through
+// DeleteOutput inside the transaction.
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input *InputById[Id]) (O, error) {
+	var zero O
+	if h.deleteOutput == nil {
+		return zero, fmt.Errorf("CRUD delete output mapper is required")
 	}
-	if h.deleteHasOutput {
+
+	return h.resource.runner.RunValue(ctx, input, func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
+		entity, err := h.deleteOperation(ctx, tx, input)
+		if err != nil {
+			return zero, err
+		}
+		if entity == nil {
+			return zero, fmt.Errorf("delete operation returned a nil entity")
+		}
+
+		output, err := h.deleteOutput(ctx, entity)
+		if err != nil {
+			return zero, fmt.Errorf("failed to transform deleted entity: %w", err)
+		}
+
 		return output, nil
+	})
+}
+
+// DeleteNoContent performs the configured delete operation and returns 204 No
+// Content without mapping an output.
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteNoContent(ctx context.Context, input *InputById[Id]) (httpserver.Response, error) {
+	if _, err := h.resource.runner.RunValue(ctx, input, h.deleteOperation); err != nil {
+		return nil, err
 	}
 
 	return httpserver.NewStatusResponse(http.StatusNoContent), nil
@@ -428,7 +450,7 @@ func WithCrudHandlers[
 		router.GET(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Read, httpserver.NoBodyBinding{}))
 		router.PUT(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Update))
 		router.PATCH(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Patch))
-		router.DELETE(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.Delete, httpserver.NoBodyBinding{}))
+		router.DELETE(fmt.Sprintf("%s/:id", path), httpserver.Bind(handler.DeleteNoContent, httpserver.NoBodyBinding{}))
 		router.POST(fmt.Sprintf("/v%d/%s", version, inflection.Plural(entityName)), httpserver.Bind(handler.List))
 	})
 }

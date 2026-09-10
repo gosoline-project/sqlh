@@ -50,10 +50,3 @@ func WithRepositorySettings[K sqlr.KeyTypes, E sqlr.Entitier[K]](settings sqlr.S
 		opts.repositorySettings = settings
 	}
 }
-
-// WithRepositoryTxSettings is an explicit alias for
-// [WithRepositorySettings]. It makes the transaction-aware repository choice
-// visible at call sites.
-func WithRepositoryTxSettings[K sqlr.KeyTypes, E sqlr.Entitier[K]](settings sqlr.Settings) Option[K, E] {
-	return WithRepositorySettings[K, E](settings)
-}

@@ -239,6 +239,7 @@ func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 		transformer.TransformPatchInputFromEntity,
 		transformer.TransformOutput,
 	)
+	definition.DeleteOutput = definition.Output
 
 	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleCrudDefinition(definition))
 }
