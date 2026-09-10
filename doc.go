@@ -27,7 +27,7 @@
 //
 // [NewCrudHandler] and the individual methods on [CrudHandler] support manual route
 // registration and operation decoration. [CrudDefinition] provides mapping,
-// identity, query, count, delete, and SQLR builder hooks. Its operation fields
+// identity, query, count, and delete extension points. Its operation fields
 // replace complete default operations when an endpoint needs custom behavior.
 // A custom UpdateOperation does not replace the mapping used by the default
 // PATCH operation. A custom PatchOperation replaces the complete default PATCH
@@ -99,10 +99,13 @@
 // before SQLH returns an entity.
 //
 // Physical SQLR deletion is the default. Applications can provide an explicit
-// soft-delete strategy. [CrudHandler.DeleteTyped] and [DeleteTypedOperation] return a
-// negotiated typed result for such endpoints. [CrudHandler.Delete] retains the
-// conventional 204 response. SQLH does not infer soft deletion from field
-// names.
+// soft-delete strategy. DeleteOutput can use the same mapper as Output to return
+// a negotiated result:
+//
+//	definition.DeleteOutput = definition.Output
+//
+// When DeleteOutput is nil, Delete returns 204 No Content. SQLH does not infer
+// soft deletion from field names.
 //
 // # Errors and domain behavior
 //

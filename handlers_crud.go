@@ -3,6 +3,7 @@ package sqlh
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlc"
@@ -43,8 +44,8 @@ type ListOutput[O any] struct {
 }
 
 // IdentityLookup replaces SQLH's default primary-key lookup. The supplied
-// builder contains composed relation-tag and definition hooks, while scope must
-// be applied to the query used by the custom lookup.
+// builder contains relation preloads derived from sqlh tags. The supplied scope
+// must be applied to the query used by the custom lookup.
 type IdentityLookup[Id sqlr.KeyTypes, K sqlr.KeyTypes, E sqlr.Entitier[K]] func(
 	ctx context.Context,
 	tx sqlr.TTx,
@@ -151,21 +152,14 @@ type CrudDefinition[
 	UpdateOperation TxOperation[IU, O]
 	PatchOperation  TxOperation[PatchInput[Id], O]
 	ListOperation   TxOperation[LI, ListOutput[O]]
-	// DeleteOperation is an escape hatch for custom delete output/status. The
-	// default operation returns an explicit 204 response.
-	DeleteOperation TxOperation[InputById[Id], httpserver.Response]
-	// DeleteTypedOperation customizes the typed delete operation used by
-	// [DeleteTyped]. It is useful for soft-delete flows that should return an
-	// ordinary negotiated output instead of the default 204 response.
-	DeleteTypedOperation TxOperation[InputById[Id], O]
-
-	// SQLR builder hooks. Relation tags are always composed before these hooks.
-	BuilderCreate      func(*sqlr.QueryBuilderCreate)
-	BuilderRead        func(*sqlr.QueryBuilderSelect)
-	BuilderQuery       func(*sqlr.QueryBuilderSelect)
-	BuilderDelete      func(*sqlr.QueryBuilderDelete)
-	BuilderUpdateRead  func(*sqlr.QueryBuilderSelect)
-	BuilderUpdateWrite func(*sqlr.QueryBuilderUpdate)
+	// DeleteOperation replaces the complete default delete mutation and returns
+	// the entity used by DeleteOutput. When it is nil, SQLH uses the configured
+	// identity, scope, and delete strategy.
+	DeleteOperation TxOperation[InputById[Id], *E]
+	// DeleteOutput maps the deleted entity to the negotiated response value. It
+	// has the same signature as Output, so callers can assign Output directly.
+	// When it is nil, Delete returns 204 No Content.
+	DeleteOutput func(context.Context, *E) (O, error)
 }
 
 // CrudDefinitionFactory constructs a CRUD definition during application
@@ -233,13 +227,13 @@ type CrudHandler[
 ] struct {
 	resource *resource[K, E]
 
-	patchOperation       TxOperation[PatchInput[Id], O]
-	createOperation      TxOperation[IC, O]
-	readOperation        TxOperation[InputById[Id], O]
-	updateOperation      TxOperation[IU, O]
-	listOperation        TxOperation[LI, ListOutput[O]]
-	deleteOperation      TxOperation[InputById[Id], httpserver.Response]
-	deleteTypedOperation TxOperation[InputById[Id], O]
+	patchOperation  TxOperation[PatchInput[Id], O]
+	createOperation TxOperation[IC, O]
+	readOperation   TxOperation[InputById[Id], O]
+	updateOperation TxOperation[IU, O]
+	listOperation   TxOperation[LI, ListOutput[O]]
+	deleteOperation TxOperation[InputById[Id], O]
+	deleteHasOutput bool
 }
 
 // NewCrudHandler creates a handler factory for a typed CRUD definition.
@@ -311,14 +305,7 @@ func newCrudHandler[
 	LI ListInputSource,
 	O any,
 ](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, Id, IC, IU, LI, O]) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
-	res, err := newResource(repository, runner, schema, resourceBuilderHooks{
-		create:      definition.BuilderCreate,
-		read:        definition.BuilderRead,
-		query:       definition.BuilderQuery,
-		delete:      definition.BuilderDelete,
-		updateRead:  definition.BuilderUpdateRead,
-		updateWrite: definition.BuilderUpdateWrite,
-	})
+	res, err := newResource(repository, runner, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -359,14 +346,14 @@ func newCrudHandler[
 	}
 
 	return &CrudHandler[K, E, Id, IC, IU, LI, O]{
-		resource:             res,
-		createOperation:      createOperation,
-		readOperation:        readOperation,
-		updateOperation:      updateOperation,
-		patchOperation:       patchOperation,
-		listOperation:        listOperation,
-		deleteOperation:      res.buildDeleteOperation(definition.DeleteOperation, definition.Identity, definition.DeleteScope, definition.Delete),
-		deleteTypedOperation: res.buildDeleteTypedOperation(definition.DeleteTypedOperation, definition.Identity, definition.DeleteScope, definition.Delete, definition.Output),
+		resource:        res,
+		createOperation: createOperation,
+		readOperation:   readOperation,
+		updateOperation: updateOperation,
+		patchOperation:  patchOperation,
+		listOperation:   listOperation,
+		deleteOperation: res.buildDeleteOperation(definition.DeleteOperation, definition.Identity, definition.DeleteScope, definition.Delete, definition.DeleteOutput),
+		deleteHasOutput: definition.DeleteOutput != nil,
 	}, nil
 }
 
@@ -401,17 +388,17 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) List(ctx context.Context, input *
 }
 
 // Delete performs a scoped identity lookup and then uses the configured delete
-// strategy. The default response is 204 No Content.
-func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input *InputById[Id]) (httpserver.Response, error) {
-	return h.resource.runner.RunValue(ctx, input, h.deleteOperation)
-}
+// strategy. It returns 204 No Content unless DeleteOutput is configured.
+func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input *InputById[Id]) (any, error) {
+	output, err := h.resource.runner.RunValue(ctx, input, h.deleteOperation)
+	if err != nil {
+		return nil, err
+	}
+	if h.deleteHasOutput {
+		return output, nil
+	}
 
-// DeleteTyped performs the configured delete operation and returns its typed
-// output. Bind this operation directly when a soft-delete endpoint should use
-// response negotiation; the standard [Delete] operation remains a 204 escape
-// hatch for conventional physical deletes.
-func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteTyped(ctx context.Context, input *InputById[Id]) (O, error) {
-	return h.resource.runner.RunValue(ctx, input, h.deleteTypedOperation)
+	return httpserver.NewStatusResponse(http.StatusNoContent), nil
 }
 
 // Close releases resources held by the SQLR repository, including prepared

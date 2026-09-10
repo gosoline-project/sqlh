@@ -3,21 +3,10 @@ package sqlh
 import (
 	"context"
 	"fmt"
-	"net/http"
 
-	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
 )
-
-type resourceBuilderHooks struct {
-	create      func(*sqlr.QueryBuilderCreate)
-	read        func(*sqlr.QueryBuilderSelect)
-	query       func(*sqlr.QueryBuilderSelect)
-	delete      func(*sqlr.QueryBuilderDelete)
-	updateRead  func(*sqlr.QueryBuilderSelect)
-	updateWrite func(*sqlr.QueryBuilderUpdate)
-}
 
 type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 	repository sqlr.CountingRepositoryTx[K, E]
@@ -39,7 +28,6 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	repository sqlr.CountingRepositoryTx[K, E],
 	runner *TxRunner,
 	schema *sqlr.EntitySchema,
-	hooks resourceBuilderHooks,
 ) (*resource[K, E], error) {
 	if repository == nil {
 		return nil, fmt.Errorf("transaction repository is required")
@@ -61,35 +49,16 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	patchAutoSyncPaths = uniqueSortedStrings(patchAutoSyncPaths)
 
 	return &resource[K, E]{
-		repository: repository,
-		runner:     runner,
-		schema:     schema,
-		tags:       tags,
-		builderCreate: composeBuilders(
-			builderCreateFromTags(tags),
-			hooks.create,
-		),
-		builderRead: composeBuilders(
-			builderLookupFromTags(tags),
-			hooks.read,
-		),
-		builderQuery: composeBuilders(
-			builderQueryFromTags(tags),
-			hooks.query,
-		),
-		builderDelete: composeBuilders(
-			builderDeleteFromTags(tags),
-			hooks.delete,
-		),
-		builderUpdateRead: composeBuilders(
-			builderUpdateLookupFromTags(tags),
-			hooks.updateRead,
-			builderForUpdate,
-		),
-		builderUpdateWrite: composeBuilders(
-			builderUpdateWriteFromTags(tags),
-			hooks.updateWrite,
-		),
+		repository:         repository,
+		runner:             runner,
+		schema:             schema,
+		tags:               tags,
+		builderCreate:      builderCreateFromTags(tags),
+		builderRead:        builderLookupFromTags(tags),
+		builderQuery:       builderQueryFromTags(tags),
+		builderDelete:      builderDeleteFromTags(tags),
+		builderUpdateRead:  composeBuilders(builderUpdateLookupFromTags(tags), builderForUpdate),
+		builderUpdateWrite: builderUpdateWriteFromTags(tags),
 		patchAutoSyncPaths: patchAutoSyncPaths,
 	}, nil
 }
@@ -426,45 +395,31 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	return ListOutput[O]{Results: results, Total: total}, nil
 }
 
-func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes](
-	custom TxOperation[InputById[Id], httpserver.Response],
-	identity IdentityLookup[Id, K, E],
-	visibility DeleteScope,
-	deleteStrategy DeleteStrategy[K, E],
-) TxOperation[InputById[Id], httpserver.Response] {
-	if custom != nil {
-		return custom
-	}
-
-	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (httpserver.Response, error) {
-		if _, err := r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy); err != nil {
-			return nil, err
-		}
-
-		return httpserver.NewStatusResponse(http.StatusNoContent), nil
-	}
-}
-
-func (r *resource[K, E]) buildDeleteTypedOperation[Id sqlr.KeyTypes, O any](
-	custom TxOperation[InputById[Id], O],
+func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes, O any](
+	custom TxOperation[InputById[Id], *E],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
 	output func(context.Context, *E) (O, error),
 ) TxOperation[InputById[Id], O] {
-	if custom != nil {
-		return custom
-	}
-
 	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
 		var zero O
+		var entity *E
+		var err error
 
-		entity, err := r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy)
+		if custom != nil {
+			entity, err = custom(ctx, tx, input)
+		} else {
+			entity, err = r.deleteEntity(ctx, tx, input, identity, visibility, deleteStrategy)
+		}
 		if err != nil {
 			return zero, err
 		}
 		if output == nil {
-			return zero, fmt.Errorf("CRUD output mapper is required for typed delete")
+			return zero, nil
+		}
+		if entity == nil {
+			return zero, fmt.Errorf("delete operation returned a nil entity")
 		}
 
 		result, err := output(ctx, entity)

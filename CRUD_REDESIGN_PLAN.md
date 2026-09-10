@@ -130,10 +130,9 @@ account-specific existence oracle.
 
 Delete is a configurable strategy. Physical SQLR deletion remains the default for
 simple resources. A service may provide a soft-delete strategy that updates a
-`deleted_at` field and then bind `DeleteTyped` (or provide
-`DeleteTypedOperation`) to return a typed output through response negotiation.
-The standard `Delete` operation remains an explicit 204 response escape hatch.
-SQLH must not infer soft delete from a field name. Soft delete is explicit because
+`deleted_at` field. Configuring `DeleteOutput` returns a typed output through
+response negotiation; leaving it nil makes `Delete` return 204 No Content. SQLH
+must not infer soft delete from a field name. Soft delete is explicit because
 it affects read, list, count, update, delete, association, and event behavior.
 
 ## HTTP and errors

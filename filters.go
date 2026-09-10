@@ -108,11 +108,10 @@ type ListInputSource interface {
 // both list and count callbacks so they cannot accidentally diverge in scope.
 type QueryScope func(qb *sqlr.QueryBuilderSelect) error
 
-// QueryPlan exposes the composed SQLR builder hooks, shared list scope, and
-// page application functions to custom query and count callbacks.
+// QueryPlan exposes the SQLR relation-tag builder, shared list scope, and page
+// application functions to custom query and count callbacks.
 type QueryPlan struct {
-	// ApplyBuilder installs relation-tag defaults followed by the definition's
-	// custom query builder.
+	// ApplyBuilder installs relation-tag defaults.
 	ApplyBuilder    func(qb *sqlr.QueryBuilderSelect)
 	ApplyScope      QueryScope
 	ApplyPagination func(qb *sqlr.QueryBuilderSelect)
