@@ -78,12 +78,14 @@ func (r *resource[K, E]) configurePatch[IU any](associations map[string]string, 
 }
 
 func (r *resource[K, E]) buildCreateOperation[IC, O any](
-	custom TxOperation[IC, O],
+	custom CrudOperation[K, E, IC, O],
 	createInput func(context.Context, *IC) (*E, error),
 	output func(context.Context, *E) (O, error),
 ) (TxOperation[IC, O], error) {
 	if custom != nil {
-		return custom, nil
+		return func(ctx context.Context, tx sqlr.TTx, input *IC) (O, error) {
+			return custom(ctx, tx, r.repository, input)
+		}, nil
 	}
 	if createInput == nil {
 		return nil, fmt.Errorf("CRUD create input mapper is required")
@@ -120,13 +122,15 @@ func (r *resource[K, E]) buildCreateOperation[IC, O any](
 }
 
 func (r *resource[K, E]) buildReadOperation[Id sqlr.KeyTypes, O any](
-	custom TxOperation[InputById[Id], O],
+	custom CrudOperation[K, E, InputById[Id], O],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	output func(context.Context, *E) (O, error),
 ) (TxOperation[InputById[Id], O], error) {
 	if custom != nil {
-		return custom, nil
+		return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
+			return custom(ctx, tx, r.repository, input)
+		}, nil
 	}
 	if output == nil {
 		return nil, fmt.Errorf("CRUD output mapper is required")
@@ -153,14 +157,16 @@ func (r *resource[K, E]) buildReadOperation[Id sqlr.KeyTypes, O any](
 }
 
 func (r *resource[K, E]) buildUpdateOperation[Id sqlr.KeyTypes, IU Identified[Id], O any](
-	custom TxOperation[IU, O],
+	custom CrudOperation[K, E, IU, O],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	updateInput func(context.Context, *E, *IU) (*E, error),
 	output func(context.Context, *E) (O, error),
 ) (TxOperation[IU, O], error) {
 	if custom != nil {
-		return custom, nil
+		return func(ctx context.Context, tx sqlr.TTx, input *IU) (O, error) {
+			return custom(ctx, tx, r.repository, input)
+		}, nil
 	}
 	if updateInput == nil {
 		return nil, fmt.Errorf("CRUD update input mapper is required")
@@ -205,7 +211,7 @@ func (r *resource[K, E]) buildUpdateOperation[Id sqlr.KeyTypes, IU Identified[Id
 }
 
 func (r *resource[K, E]) buildPatchOperation[Id sqlr.KeyTypes, IU Identified[Id], O any](
-	custom TxOperation[PatchInput[Id], O],
+	custom CrudOperation[K, E, PatchInput[Id], O],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	patchInputFromEntity func(context.Context, *E) (*IU, error),
@@ -215,7 +221,9 @@ func (r *resource[K, E]) buildPatchOperation[Id sqlr.KeyTypes, IU Identified[Id]
 	associationTriggers map[string]string,
 ) (TxOperation[PatchInput[Id], O], error) {
 	if custom != nil {
-		return custom, nil
+		return func(ctx context.Context, tx sqlr.TTx, input *PatchInput[Id]) (O, error) {
+			return custom(ctx, tx, r.repository, input)
+		}, nil
 	}
 	if patchInputFromEntity == nil {
 		return nil, fmt.Errorf("CRUD patch input from entity mapper is required")
@@ -300,14 +308,16 @@ func (r *resource[K, E]) patch[Id sqlr.KeyTypes, IU Identified[Id], O any](
 }
 
 func (r *resource[K, E]) buildListOperation[LI ListInputSource, O any](
-	custom TxOperation[LI, ListOutput[O]],
+	custom CrudOperation[K, E, LI, ListOutput[O]],
 	visibility DeleteScope,
 	query ListQuery[K, E, LI],
 	count ListCount[K, E, LI],
 	output func(context.Context, *E) (O, error),
 ) (TxOperation[LI, ListOutput[O]], error) {
 	if custom != nil {
-		return custom, nil
+		return func(ctx context.Context, tx sqlr.TTx, input *LI) (ListOutput[O], error) {
+			return custom(ctx, tx, r.repository, input)
+		}, nil
 	}
 	if output == nil {
 		return nil, fmt.Errorf("CRUD output mapper is required")
@@ -342,7 +352,8 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 			forceScope(value),
 			value.ApplyFilters,
 		),
-		ApplyPagination: value.ApplyPagination,
+		ApplyQueryModifiers: value.ApplyQueryModifiers,
+		ApplyPagination:     value.ApplyPagination,
 	}
 
 	var entities []E
@@ -358,6 +369,7 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 
 				return
 			}
+			plan.ApplyQueryModifiers(qb)
 			plan.ApplyPagination(qb)
 		})
 		if queryErr != nil {
@@ -389,13 +401,15 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 }
 
 func (r *resource[K, E]) buildDeleteOperation[Id sqlr.KeyTypes](
-	custom TxOperation[InputById[Id], *E],
+	custom CrudOperation[K, E, InputById[Id], *E],
 	identity IdentityLookup[Id, K, E],
 	visibility DeleteScope,
 	deleteStrategy DeleteStrategy[K, E],
 ) TxOperation[InputById[Id], *E] {
 	if custom != nil {
-		return custom
+		return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (*E, error) {
+			return custom(ctx, tx, r.repository, input)
+		}
 	}
 
 	return func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (*E, error) {

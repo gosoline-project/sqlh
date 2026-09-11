@@ -36,6 +36,7 @@ type crudTestOutput struct {
 
 type crudTestListInput struct {
 	ForceFilters
+	page                  ListPage
 	applyFiltersCalls     *int
 	applyFiltersErr       error
 	validatePaginationErr error
@@ -53,7 +54,18 @@ func (i crudTestListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 	return nil
 }
 
-func (crudTestListInput) ApplyPagination(*sqlr.QueryBuilderSelect) {}
+func (crudTestListInput) ApplyQueryModifiers(qb *sqlr.QueryBuilderSelect) {
+	qb.OrderBy("name")
+}
+
+func (i crudTestListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
+	if i.page.Limit > 0 {
+		qb.Limit(i.page.Limit)
+	}
+	if i.page.Offset > 0 {
+		qb.Offset(i.page.Offset)
+	}
+}
 
 func (i crudTestListInput) ValidatePagination() error {
 	return i.validatePaginationErr
@@ -68,38 +80,42 @@ func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
 	require.NoError(t, err)
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
-	definition := newCrudTestDefinition()
+	definition := newCrudTestDefinitionWithList[crudTestListInput]()
 	definition.DeleteScope = func(qb *sqlr.QueryBuilderSelect) {
 		qb.Where("deleted = ?", false)
 	}
 
-	assertPlan := func(qb *sqlr.QueryBuilderSelect, paginated bool) {
+	assertPlan := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) {
 		query, arguments, queryErr := qb.ToSql()
 		require.NoError(t, queryErr)
 		require.Contains(t, query, "deleted")
 		require.Contains(t, query, "account_id")
-		require.Contains(t, query, "status")
-		require.Equal(t, []any{false, 42, "active"}, arguments)
-		if paginated {
+		require.Contains(t, query, "domain")
+		require.Equal(t, []any{false, 42, "allowed"}, arguments)
+		if rowQuery {
+			require.Contains(t, query, "ORDER BY `name`")
 			require.Contains(t, query, "LIMIT 2")
 			require.Contains(t, query, "OFFSET 1")
 
 			return
 		}
+		require.NotContains(t, query, "ORDER BY")
 		require.NotContains(t, query, "LIMIT")
 		require.NotContains(t, query, "OFFSET")
 	}
-	definition.Query = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *ListInput, plan QueryPlan) ([]crudTestEntity, error) {
+	definition.Query = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestListInput, plan QueryPlan) ([]crudTestEntity, error) {
 		require.NotNil(t, plan.ApplyBuilder)
+		require.NotNil(t, plan.ApplyQueryModifiers)
 		qb := sqlr.NewQueryBuilderSelect()
 		plan.ApplyBuilder(qb)
 		require.NoError(t, plan.ApplyScope(qb))
+		plan.ApplyQueryModifiers(qb)
 		plan.ApplyPagination(qb)
 		assertPlan(qb, true)
 
 		return []crudTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
 	}
-	definition.Count = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *ListInput, plan QueryPlan) (int, error) {
+	definition.Count = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestListInput, plan QueryPlan) (int, error) {
 		require.NotNil(t, plan.ApplyBuilder)
 		qb := sqlr.NewQueryBuilderSelect()
 		plan.ApplyBuilder(qb)
@@ -112,10 +128,7 @@ func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
 	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
 
-	input := ListInput{
-		Filter: sqlc.JsonFilter{Type: "eq", Column: "status", Value: "active"},
-		Page:   ListPage{Limit: 2, Offset: 1},
-	}
+	input := crudTestListInput{page: ListPage{Limit: 2, Offset: 1}}
 	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
 		qb.Where("account_id = ?", 42)
 	})
@@ -343,13 +356,18 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
-	assertScope := func(qb *sqlr.QueryBuilderSelect) error {
+	assertScope := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) error {
 		query, arguments, err := qb.ToSql()
 		if err != nil {
 			return err
 		}
 		require.Contains(t, query, "account_id")
 		require.Contains(t, query, "domain")
+		if rowQuery {
+			require.Contains(t, query, "ORDER BY `name`")
+		} else {
+			require.NotContains(t, query, "ORDER BY")
+		}
 		require.Equal(t, []any{7, "allowed"}, arguments)
 
 		return nil
@@ -360,10 +378,10 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 			option(qb)
 		}
 
-		return nil, assertScope(qb)
+		return nil, assertScope(qb, true)
 	}).Once()
 	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
-		return 0, assertScope(qb)
+		return 0, assertScope(qb, false)
 	}).Once()
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
@@ -399,7 +417,7 @@ func TestCrudHandlerDeleteReturnsNoContentWithoutOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(context.Context, sqlr.TTx, *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(context.Context, sqlr.TTx, sqlr.CountingRepositoryTx[int, crudTestEntity], *InputById[int]) (*crudTestEntity, error) {
 		return nil, nil
 	}
 
@@ -453,7 +471,8 @@ func TestCrudHandlerDeleteOperationUsesConfiguredOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, input *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		require.Same(t, repository, actualRepository)
 		require.Equal(t, 11, input.Id)
 
 		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}, Name: "custom"}, nil
@@ -479,7 +498,9 @@ func TestCrudHandlerDeleteOutputErrorRollsBack(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, input *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		require.Same(t, repository, actualRepository)
+
 		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil
 	}
 	definition.DeleteOutput = func(context.Context, *crudTestEntity) (crudTestOutput, error) {
@@ -526,4 +547,73 @@ func newTestTx(t *testing.T) *sqlcmocks.Tx {
 	t.Helper()
 
 	return sqlcmocks.NewTx(t)
+}
+
+func TestCrudHandlerCustomOperationsReceiveConfiguredRepository(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Times(6)
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	assertRepository := func(actual sqlr.CountingRepositoryTx[int, crudTestEntity]) {
+		require.Same(t, repository, actual)
+	}
+	definition := newCrudTestDefinition()
+	definition.CreateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestCreateInput) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 1}, nil
+	}
+	definition.ReadOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *InputById[int]) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 2}, nil
+	}
+	definition.UpdateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestUpdateInput) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 3}, nil
+	}
+	definition.PatchOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *PatchInput[int]) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 4}, nil
+	}
+	definition.ListOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *ListInput) (ListOutput[crudTestOutput], error) {
+		assertRepository(actual)
+
+		return ListOutput[crudTestOutput]{Total: 5}, nil
+	}
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		assertRepository(actual)
+
+		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil
+	}
+	definition.DeleteOutput = definition.Output
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	created, err := handler.Create(t.Context(), &crudTestCreateInput{})
+	require.NoError(t, err)
+	require.Equal(t, 1, created.Id)
+	read, err := handler.Read(t.Context(), &InputById[int]{Id: 2})
+	require.NoError(t, err)
+	require.Equal(t, 2, read.Id)
+	updated, err := handler.Update(t.Context(), &crudTestUpdateInput{InputById: InputById[int]{Id: 3}})
+	require.NoError(t, err)
+	require.Equal(t, 3, updated.Id)
+	patched, err := handler.Patch(t.Context(), &PatchInput[int]{InputById: InputById[int]{Id: 4}})
+	require.NoError(t, err)
+	require.Equal(t, 4, patched.Id)
+	listed, err := handler.List(t.Context(), &ListInput{})
+	require.NoError(t, err)
+	require.Equal(t, 5, listed.Total)
+	deleted, err := handler.Delete(t.Context(), &InputById[int]{Id: 6})
+	require.NoError(t, err)
+	require.Equal(t, 6, deleted.Id)
 }

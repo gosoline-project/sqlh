@@ -51,8 +51,8 @@ type ListInput struct {
 	Page   ListPage        `json:"page,omitempty"`
 }
 
-// ApplyFilters applies the user filter without pagination. SQLH applies force
-// filters separately through QueryPlan.ApplyScope.
+// ApplyFilters applies the user filter. SQLH applies force filters separately
+// through QueryPlan.ApplyScope.
 func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 	if qb == nil {
 		return fmt.Errorf("query builder is nil")
@@ -68,6 +68,10 @@ func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 
 	return nil
 }
+
+// ApplyQueryModifiers applies row-only query modifiers such as grouping and ordering.
+// If a modifier changes row cardinality, the CRUD definition must provide a matching Count callback.
+func (ListInput) ApplyQueryModifiers(*sqlr.QueryBuilderSelect) {}
 
 // ApplyPagination applies the standard page limit and offset fields.
 func (i ListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
@@ -98,6 +102,7 @@ func (i ListInput) ValidatePagination() error {
 type ListInputSource interface {
 	ForceFilterSource
 	ApplyFilters(*sqlr.QueryBuilderSelect) error
+	ApplyQueryModifiers(*sqlr.QueryBuilderSelect)
 	ApplyPagination(*sqlr.QueryBuilderSelect)
 	ValidatePagination() error
 }
@@ -106,13 +111,14 @@ type ListInputSource interface {
 // both list and count callbacks so they cannot accidentally diverge in scope.
 type QueryScope func(qb *sqlr.QueryBuilderSelect) error
 
-// QueryPlan exposes the SQLR relation-tag builder, shared list scope, and page
-// application functions to custom query and count callbacks.
+// QueryPlan exposes the SQLR relation-tag builder, shared list scope, row-only
+// query modifiers, and pagination to custom query and count callbacks.
 type QueryPlan struct {
 	// ApplyBuilder installs relation-tag defaults. It is always safe to call.
-	ApplyBuilder    func(qb *sqlr.QueryBuilderSelect)
-	ApplyScope      QueryScope
-	ApplyPagination func(qb *sqlr.QueryBuilderSelect)
+	ApplyBuilder        func(qb *sqlr.QueryBuilderSelect)
+	ApplyScope          QueryScope
+	ApplyQueryModifiers func(qb *sqlr.QueryBuilderSelect)
+	ApplyPagination     func(qb *sqlr.QueryBuilderSelect)
 }
 
 func applyForceFilters(source ForceFilterSource, qb *sqlr.QueryBuilderSelect) {
