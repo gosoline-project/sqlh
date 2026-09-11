@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	gosolinehttpserver "github.com/gosoline-project/httpserver"
+	"github.com/gosoline-project/sqlh"
 	"github.com/gosoline-project/sqlr"
 	"github.com/justtrackio/gosoline/pkg/cfg"
 	"github.com/justtrackio/gosoline/pkg/log"
@@ -64,17 +65,17 @@ func (s *CrudIntegrationTestSuite) TestReadPostPreloadsAssociations(app suite.Ap
 
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal(PostOutput{
-		ID:       1,
-		AuthorID: 1,
+		Id:       1,
+		AuthorId: 1,
 		Title:    "Getting Started with Go",
 		Status:   "published",
 		Author: &AuthorOutput{
-			ID:   1,
+			Id:   1,
 			Name: "Alice Johnson",
 		},
 		Tags: []TagOutput{
-			{ID: 1, Name: "golang"},
-			{ID: 4, Name: "tutorial"},
+			{Id: 1, Name: "golang"},
+			{Id: 4, Name: tagTutorial},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
@@ -87,7 +88,7 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 	defer app.WaitDone()
 	defer app.Stop()
 
-	var output []PostOutput
+	var output sqlh.ListOutput[PostOutput]
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]any{
@@ -105,21 +106,22 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal([]PostOutput{{
-		ID:       2,
-		AuthorID: 1,
+		Id:       2,
+		AuthorId: 1,
 		Title:    "Advanced Go Patterns",
 		Status:   "published",
 		Author: &AuthorOutput{
-			ID:   1,
+			Id:   1,
 			Name: "Alice Johnson",
 		},
 		Tags: []TagOutput{
-			{ID: 1, Name: "golang"},
-			{ID: 3, Name: "testing"},
+			{Id: 1, Name: "golang"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: time.Date(2024, 1, 10, 14, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2024, 1, 10, 14, 0, 0, 0, time.UTC),
-	}}, output)
+	}}, output.Results)
+	s.Equal(1, output.Total)
 
 	return nil
 }
@@ -132,12 +134,12 @@ func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTes
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(PostCreateInput{
-			AuthorID: 2,
+			AuthorId: 2,
 			Title:    "Integration Testing with SQLH",
 			Status:   "draft",
 			Tags: []PostInputTag{
-				{ID: 2, Name: "database"},
-				{ID: 3, Name: "testing"},
+				{Id: 2, Name: "database"},
+				{Id: 3, Name: "testing"},
 			},
 		}).
 		SetResult(&output).
@@ -147,16 +149,16 @@ func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTes
 	}
 
 	s.Equal(http.StatusOK, response.StatusCode())
-	s.NotZero(output.ID)
+	s.NotZero(output.Id)
 
 	expectedOutput := PostOutput{
-		ID:       output.ID,
-		AuthorID: 2,
+		Id:       output.Id,
+		AuthorId: 2,
 		Title:    "Integration Testing with SQLH",
 		Status:   "draft",
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: output.CreatedAt,
 		UpdatedAt: output.UpdatedAt,
@@ -164,23 +166,23 @@ func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTes
 
 	s.Equal(expectedOutput, output)
 
-	stored, err := s.readPost(output.ID)
+	stored, err := s.readPost(output.Id)
 	if err != nil {
 		return err
 	}
 
 	s.Equal(PostOutput{
-		ID:       output.ID,
-		AuthorID: 2,
+		Id:       output.Id,
+		AuthorId: 2,
 		Title:    "Integration Testing with SQLH",
 		Status:   "draft",
 		Author: &AuthorOutput{
-			ID:   2,
+			Id:   2,
 			Name: "Bob Smith",
 		},
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: stored.CreatedAt,
 		UpdatedAt: stored.UpdatedAt,
@@ -197,12 +199,12 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(PostUpdateInput{
-			AuthorID: 1,
+			AuthorId: 1,
 			Title:    "Getting Started with Go and SQLH",
 			Status:   "published",
 			Tags: []PostInputTag{
-				{ID: 1, Name: "golang"},
-				{ID: 3, Name: "testing"},
+				{Id: 1, Name: "golang"},
+				{Id: 3, Name: "testing"},
 			},
 		}).
 		SetResult(&output).
@@ -214,13 +216,13 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 	s.Equal(http.StatusOK, response.StatusCode())
 
 	expectedOutput := PostOutput{
-		ID:       1,
-		AuthorID: 1,
+		Id:       1,
+		AuthorId: 1,
 		Title:    "Getting Started with Go and SQLH",
 		Status:   "published",
 		Tags: []TagOutput{
-			{ID: 1, Name: "golang"},
-			{ID: 3, Name: "testing"},
+			{Id: 1, Name: "golang"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: output.UpdatedAt,
@@ -234,21 +236,139 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 	}
 
 	s.Equal(PostOutput{
-		ID:       1,
-		AuthorID: 1,
+		Id:       1,
+		AuthorId: 1,
 		Title:    "Getting Started with Go and SQLH",
 		Status:   "published",
 		Author: &AuthorOutput{
-			ID:   1,
+			Id:   1,
 			Name: "Alice Johnson",
 		},
 		Tags: []TagOutput{
-			{ID: 1, Name: "golang"},
-			{ID: 3, Name: "testing"},
+			{Id: 1, Name: "golang"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: stored.UpdatedAt,
 	}, postOutputFromPost(stored))
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostChangesOnlySuppliedScalar(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"title": "Patched title",
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal("Patched title", output.Title)
+	s.Equal([]TagOutput{{Id: 1, Name: "golang"}, {Id: 4, Name: tagTutorial}}, output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Equal("Patched title", stored.Title)
+	s.Equal([]TagOutput{{Id: 1, Name: "golang"}, {Id: 4, Name: tagTutorial}}, postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostReplacesSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": []PostInputTag{{Id: 1}, {Id: 3}},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal([]TagOutput{{Id: 1, Name: "golang"}, {Id: 3, Name: "testing"}}, output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Equal([]TagOutput{{Id: 1, Name: "golang"}, {Id: 3, Name: "testing"}}, postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostEmptyArrayClearsSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": []PostInputTag{},
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Empty(output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Empty(postOutputFromPost(stored).Tags)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchPostNullClearsSuppliedTags(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output PostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"tags": nil,
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Empty(output.Tags)
+
+	stored, err := s.readPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Empty(postOutputFromPost(stored).Tags)
 
 	return nil
 }
@@ -280,12 +400,12 @@ func (s *CrudIntegrationTestSuite) TestCreatePostPreloadsTagsOnCreate(app suite.
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(MutationPreloadPostCreateInput{
-			AuthorID: 2,
+			AuthorId: 2,
 			Title:    "Create Preload Tags",
 			Status:   "draft",
 			Tags: []MutationPreloadPostInputTag{
-				{ID: 2},
-				{ID: 3},
+				{Id: 2},
+				{Id: 3},
 			},
 		}).
 		SetResult(&output).
@@ -295,37 +415,37 @@ func (s *CrudIntegrationTestSuite) TestCreatePostPreloadsTagsOnCreate(app suite.
 	}
 
 	s.Equal(http.StatusOK, response.StatusCode())
-	s.NotZero(output.ID)
+	s.NotZero(output.Id)
 	s.Equal(MutationPreloadPostOutput{
-		ID:       output.ID,
-		AuthorID: 2,
+		Id:       output.Id,
+		AuthorId: 2,
 		Title:    "Create Preload Tags",
 		Status:   "draft",
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: output.CreatedAt,
 		UpdatedAt: output.UpdatedAt,
 	}, output)
 
-	stored, err := s.readPost(output.ID)
+	stored, err := s.readPost(output.Id)
 	if err != nil {
 		return err
 	}
 
 	s.Equal(PostOutput{
-		ID:       output.ID,
-		AuthorID: 2,
+		Id:       output.Id,
+		AuthorId: 2,
 		Title:    "Create Preload Tags",
 		Status:   "draft",
 		Author: &AuthorOutput{
-			ID:   2,
+			Id:   2,
 			Name: "Bob Smith",
 		},
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: stored.CreatedAt,
 		UpdatedAt: stored.UpdatedAt,
@@ -342,12 +462,12 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(MutationPreloadPostUpdateInput{
-			AuthorID: 2,
+			AuthorId: 2,
 			Title:    "Updated Preload Tags",
 			Status:   "published",
 			Tags: []MutationPreloadPostInputTag{
-				{ID: 2},
-				{ID: 3},
+				{Id: 2},
+				{Id: 3},
 			},
 		}).
 		SetResult(&output).
@@ -358,13 +478,13 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal(MutationPreloadPostOutput{
-		ID:       1,
-		AuthorID: 2,
+		Id:       1,
+		AuthorId: 2,
 		Title:    "Updated Preload Tags",
 		Status:   "published",
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: output.UpdatedAt,
@@ -376,17 +496,17 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 	}
 
 	s.Equal(PostOutput{
-		ID:       1,
-		AuthorID: 2,
+		Id:       1,
+		AuthorId: 2,
 		Title:    "Updated Preload Tags",
 		Status:   "published",
 		Author: &AuthorOutput{
-			ID:   2,
+			Id:   2,
 			Name: "Bob Smith",
 		},
 		Tags: []TagOutput{
-			{ID: 2, Name: "database"},
-			{ID: 3, Name: "testing"},
+			{Id: 2, Name: "database"},
+			{Id: 3, Name: "testing"},
 		},
 		CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
 		UpdatedAt: stored.UpdatedAt,
@@ -413,7 +533,7 @@ func postOutputFromPost(post *Post) PostOutput {
 	var author *AuthorOutput
 	if post.Author.Id != 0 || post.Author.Name != "" {
 		author = &AuthorOutput{
-			ID:   post.Author.Id,
+			Id:   post.Author.Id,
 			Name: post.Author.Name,
 		}
 	}
@@ -421,14 +541,14 @@ func postOutputFromPost(post *Post) PostOutput {
 	tags := make([]TagOutput, len(post.Tags))
 	for i, tag := range post.Tags {
 		tags[i] = TagOutput{
-			ID:   tag.Id,
+			Id:   tag.Id,
 			Name: tag.Name,
 		}
 	}
 
 	return PostOutput{
-		ID:        post.Id,
-		AuthorID:  post.AuthorID,
+		Id:        post.Id,
+		AuthorId:  post.AuthorId,
 		Title:     post.Title,
 		Status:    post.Status,
 		Author:    author,

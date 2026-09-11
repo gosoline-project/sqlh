@@ -18,6 +18,7 @@ type (
 		Name string `json:"name"`
 	}
 	UserUpdateInput struct {
+		sqlh.InputById[int]
 		Name string `json:"name"`
 	}
 	User struct {
@@ -25,7 +26,7 @@ type (
 		Name string
 	}
 	UserOutput struct {
-		ID        int       `json:"id"`
+		Id        int       `json:"id"`
 		Name      string    `json:"name"`
 		CreatedAt time.Time `json:"created_at"`
 		UpdatedAt time.Time `json:"updated_at"`
@@ -34,10 +35,18 @@ type (
 
 // NewUserCrud returns the CRUD handler registration function for the user entity.
 func NewUserCrud() httpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleTransformer[int, User, UserCreateInput, UserUpdateInput](&UserTransformer{}))
+	transformer := &UserTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformPatchInputFromEntity,
+		transformer.TransformOutput,
+	)
+
+	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleCrudDefinition(definition))
 }
 
-// UserTransformer implements sqlh.Transformer for the User entity.
+// UserTransformer maps User HTTP values and database entities.
 type UserTransformer struct{}
 
 // TransformCreateInput converts a UserCreateInput DTO into a new User entity.
@@ -54,24 +63,21 @@ func (t *UserTransformer) TransformUpdateInput(ctx context.Context, user *User, 
 	return user, nil
 }
 
-// RenderEntityResponse renders a single User entity as an HTTP response.
-func (t *UserTransformer) RenderEntityResponse(ctx context.Context, user *User) (httpserver.Response, error) {
-	return httpserver.NewJsonResponse(t.toOutput(user)), nil
+// TransformPatchInputFromEntity maps a User to the complete update input used by PATCH.
+func (t *UserTransformer) TransformPatchInputFromEntity(_ context.Context, user *User) (*UserUpdateInput, error) {
+	return &UserUpdateInput{
+		InputById: sqlh.InputById[int]{Id: user.Id},
+		Name:      user.Name,
+	}, nil
 }
 
-// RenderQueryResponse renders a list of User entities as an HTTP response.
-func (t *UserTransformer) RenderQueryResponse(ctx context.Context, users []User) (httpserver.Response, error) {
-	output := make([]UserOutput, len(users))
-	for i, user := range users {
-		output[i] = t.toOutput(&user)
-	}
-
-	return httpserver.NewJsonResponse(output), nil
+func (t *UserTransformer) TransformOutput(_ context.Context, user *User) (UserOutput, error) {
+	return t.toOutput(user), nil
 }
 
 func (t *UserTransformer) toOutput(user *User) UserOutput {
 	return UserOutput{
-		ID:        user.Id,
+		Id:        user.Id,
 		Name:      user.Name,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,

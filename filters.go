@@ -1,0 +1,132 @@
+package sqlh
+
+import (
+	"fmt"
+
+	"github.com/gosoline-project/sqlc"
+	"github.com/gosoline-project/sqlr"
+	"github.com/justtrackio/gosoline/pkg/validation"
+)
+
+// ForceFilter is a server-owned query restriction. SQLH applies every force
+// filter in addition to request filters and pagination.
+type ForceFilter func(qb *sqlr.QueryBuilderSelect)
+
+// ForceFilterSource exposes request-local force filters to SQLH operations.
+// Inputs used by scoped operations should embed [ForceFilters].
+type ForceFilterSource interface {
+	GetForceFilters() []ForceFilter
+}
+
+// ForceFilters stores server-owned query restrictions. It is intended to be
+// embedded in HTTP input structs. The unexported slice prevents HTTP binders
+// from populating or replacing the filters.
+type ForceFilters struct {
+	filters []ForceFilter
+}
+
+// AddForceFilter adds server-owned query restrictions.
+func (f *ForceFilters) AddForceFilter(filters ...ForceFilter) {
+	f.filters = append(f.filters, filters...)
+}
+
+// GetForceFilters returns a copy of the filters currently stored on the carrier.
+func (f ForceFilters) GetForceFilters() []ForceFilter {
+	return append([]ForceFilter(nil), f.filters...)
+}
+
+// ListPage contains the limit and offset for a list request.
+type ListPage struct {
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
+}
+
+// ListInput is the standard SQLH list input. Applications can embed it in a
+// domain-specific input to retain the predefined filter, page, and force-filter
+// behavior.
+type ListInput struct {
+	ForceFilters
+
+	Filter sqlc.JsonFilter `json:"filter"`
+	Page   ListPage        `json:"page,omitempty"`
+}
+
+// ApplyFilters applies the user filter. SQLH applies force filters separately
+// through QueryPlan.ApplyScope.
+func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
+	if qb == nil {
+		return fmt.Errorf("query builder is nil")
+	}
+
+	expression, err := i.Filter.ToExpression()
+	if err != nil {
+		return fmt.Errorf("failed to convert list filter: %w", err)
+	}
+	if expression != nil {
+		qb.Where(expression)
+	}
+
+	return nil
+}
+
+// ApplyQueryModifiers applies row-only query modifiers such as grouping and ordering.
+// If a modifier changes row cardinality, the CRUD definition must provide a matching Count callback.
+func (ListInput) ApplyQueryModifiers(*sqlr.QueryBuilderSelect) {}
+
+// ApplyPagination applies the standard page limit and offset fields.
+func (i ListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
+	if qb == nil {
+		return
+	}
+	if i.Page.Limit > 0 {
+		qb.Limit(i.Page.Limit)
+	}
+	if i.Page.Offset > 0 {
+		qb.Offset(i.Page.Offset)
+	}
+}
+
+// ValidatePagination validates the standard page limit and offset fields.
+func (i ListInput) ValidatePagination() error {
+	if i.Page.Limit < 0 {
+		return validation.NewError(fmt.Errorf("limit must not be negative"))
+	}
+	if i.Page.Offset < 0 {
+		return validation.NewError(fmt.Errorf("offset must not be negative"))
+	}
+
+	return nil
+}
+
+// ListInputSource is the minimal contract required by a typed list operation.
+type ListInputSource interface {
+	ForceFilterSource
+	ApplyFilters(*sqlr.QueryBuilderSelect) error
+	ApplyQueryModifiers(*sqlr.QueryBuilderSelect)
+	ApplyPagination(*sqlr.QueryBuilderSelect)
+	ValidatePagination() error
+}
+
+// QueryScope applies the non-pagination part of a list query. It is passed to
+// both list and count callbacks so they cannot accidentally diverge in scope.
+type QueryScope func(qb *sqlr.QueryBuilderSelect) error
+
+// QueryPlan exposes the SQLR relation-tag builder, shared list scope, row-only
+// query modifiers, and pagination to custom query and count callbacks.
+type QueryPlan struct {
+	// ApplyBuilder installs relation-tag defaults. It is always safe to call.
+	ApplyBuilder        func(qb *sqlr.QueryBuilderSelect)
+	ApplyScope          QueryScope
+	ApplyQueryModifiers func(qb *sqlr.QueryBuilderSelect)
+	ApplyPagination     func(qb *sqlr.QueryBuilderSelect)
+}
+
+func applyForceFilters(source ForceFilterSource, qb *sqlr.QueryBuilderSelect) {
+	if source == nil || qb == nil {
+		return
+	}
+
+	for _, filter := range source.GetForceFilters() {
+		filter(qb)
+	}
+}

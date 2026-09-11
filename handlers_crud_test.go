@@ -2,382 +2,618 @@ package sqlh
 
 import (
 	"context"
-	"reflect"
+	"errors"
+	"net/http"
+	"strings"
 	"testing"
 
-	"github.com/gosoline-project/httpserver"
-	sqlhmocks "github.com/gosoline-project/sqlh/mocks"
+	"github.com/gosoline-project/sqlc"
+	sqlcmocks "github.com/gosoline-project/sqlc/mocks"
 	"github.com/gosoline-project/sqlr"
 	sqlrmocks "github.com/gosoline-project/sqlr/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-type crudTaggedChild struct {
-	sqlr.Entity[int64]
+type crudTestEntity struct {
+	sqlr.Entity[int]
 	Name string `db:"name"`
 }
 
-type crudTaggedItem struct {
-	sqlr.Entity[int64]
-	ChildID int64             `db:"child_id"`
-	Name    string            `db:"name"`
-	Child   crudTaggedChild   `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:create,read,update"`
-	Tags    []crudTaggedChild `db:"-" sqlr:"many2many:crud_tagged_item_tags" sqlh:"preload:create,read,update;sync:create,update,delete"`
-}
-
-type crudTaggedQueryOnlyItem struct {
-	sqlr.Entity[int64]
-	ChildID int64           `db:"child_id"`
-	Child   crudTaggedChild `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:query"`
-}
-
-type crudTaggedCreateInput struct {
+type crudTestCreateInput struct {
 	Name string `json:"name"`
 }
 
-type crudTaggedUpdateInput struct {
+type crudTestUpdateInput struct {
+	InputById[int]
 	Name string `json:"name"`
 }
 
-type crudTaggedTransformer struct{}
-
-func (t *crudTaggedTransformer) TransformCreateInput(ctx context.Context, input *crudTaggedCreateInput) (*crudTaggedItem, error) {
-	return &crudTaggedItem{Name: input.Name}, nil
+type crudTestOutput struct {
+	Id   int    `json:"id"`
+	Name string `json:"name"`
 }
 
-func (t *crudTaggedTransformer) TransformUpdateInput(ctx context.Context, entity *crudTaggedItem, input *crudTaggedUpdateInput) (*crudTaggedItem, error) {
-	entity.Name = input.Name
-
-	return entity, nil
+type crudTestListInput struct {
+	ForceFilters
+	page                  ListPage
+	applyFiltersCalls     *int
+	applyFiltersErr       error
+	validatePaginationErr error
 }
 
-func (t *crudTaggedTransformer) RenderEntityResponse(ctx context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
-	return httpserver.NewJsonResponse(entity), nil
-}
-
-func (t *crudTaggedTransformer) RenderQueryResponse(ctx context.Context, entities []crudTaggedItem) (httpserver.Response, error) {
-	return httpserver.NewJsonResponse(entities), nil
-}
-
-type crudInterfaceTransformer struct {
-	crudTaggedTransformer
-}
-
-func (t *crudInterfaceTransformer) BuilderCreate(qb *sqlr.QueryBuilderCreate) {
-	qb.Preload("ExtraCreate")
-	qb.SyncAssociation("Child")
-}
-
-func (t *crudInterfaceTransformer) BuilderRead(qb *sqlr.QueryBuilderRead) {
-	qb.Preload("ExtraRead")
-}
-
-func (t *crudInterfaceTransformer) BuilderQuery(qb *sqlr.QueryBuilderSelect) {
-	qb.Preload("ExtraQuery")
-}
-
-func (t *crudInterfaceTransformer) BuilderUpdateRead(qb *sqlr.QueryBuilderRead) {
-	qb.Preload("ExtraUpdateRead")
-}
-
-func (t *crudInterfaceTransformer) BuilderUpdateWrite(qb *sqlr.QueryBuilderUpdate) {
-	qb.Preload("ExtraUpdateWrite")
-	qb.SyncAssociation("Child")
-}
-
-func (t *crudInterfaceTransformer) BuilderDelete(qb *sqlr.QueryBuilderDelete) {
-	qb.SyncAssociation("Child")
-}
-
-func TestHandlerCrud_TagBuildersApplyToReadAndQuery(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedItem]()
-	require.NoError(t, err)
-
-	readQB := sqlr.NewQueryBuilderRead()
-	queryQB := sqlr.NewQueryBuilderSelect()
-
-	composeBuilders(builderReadFromTags(tags))(readQB)
-	composeBuilders(builderQueryFromTags(tags))(queryQB)
-
-	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromReadBuilder(readQB))
-	require.Empty(t, preloadRelationsFromSelectBuilder(queryQB))
-}
-
-func TestHandlerCrud_QueryBuilderUsesQueryPaths(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedQueryOnlyItem]()
-	require.NoError(t, err)
-
-	readQB := sqlr.NewQueryBuilderRead()
-	queryQB := sqlr.NewQueryBuilderSelect()
-
-	composeBuilders(builderReadFromTags(tags))(readQB)
-	composeBuilders(builderQueryFromTags(tags))(queryQB)
-
-	require.Empty(t, preloadRelationsFromReadBuilder(readQB))
-	require.Equal(t, []string{"Child"}, preloadRelationsFromSelectBuilder(queryQB))
-}
-
-func TestHandlerCrud_TagBuildersApplyToCreateAndUpdate(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedItem]()
-	require.NoError(t, err)
-
-	createQB := sqlr.NewQueryBuilderCreate()
-	deleteQB := sqlr.NewQueryBuilderDelete()
-	updateReadQB := sqlr.NewQueryBuilderRead()
-	updateWriteQB := sqlr.NewQueryBuilderUpdate()
-
-	composeBuilders(builderCreateFromTags(tags))(createQB)
-	composeBuilders(builderDeleteFromTags(tags))(deleteQB)
-	composeBuilders(builderUpdateReadFromTags(tags))(updateReadQB)
-	composeBuilders(builderUpdateWriteFromTags(tags))(updateWriteQB)
-
-	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromCreateBuilder(createQB))
-	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromCreateBuilder(createQB))
-	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromDeleteBuilder(deleteQB))
-	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromReadBuilder(updateReadQB))
-	require.ElementsMatch(t, []string{"Child", "Tags"}, preloadRelationsFromUpdateBuilder(updateWriteQB))
-	require.ElementsMatch(t, []string{"Tags"}, syncPathsFromUpdateBuilder(updateWriteQB))
-}
-
-func TestHandlerCrud_ComposesTagAndInterfaceBuilders(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedItem]()
-	require.NoError(t, err)
-
-	transformer := &crudInterfaceTransformer{}
-
-	createQB := sqlr.NewQueryBuilderCreate()
-	readQB := sqlr.NewQueryBuilderRead()
-	queryQB := sqlr.NewQueryBuilderSelect()
-	deleteQB := sqlr.NewQueryBuilderDelete()
-	updateReadQB := sqlr.NewQueryBuilderRead()
-	updateWriteQB := sqlr.NewQueryBuilderUpdate()
-
-	composeBuilders(builderCreateFromTags(tags), transformer.BuilderCreate)(createQB)
-	composeBuilders(builderReadFromTags(tags), transformer.BuilderRead)(readQB)
-	composeBuilders(builderQueryFromTags(tags), transformer.BuilderQuery)(queryQB)
-	composeBuilders(builderDeleteFromTags(tags), transformer.BuilderDelete)(deleteQB)
-	composeBuilders(builderUpdateReadFromTags(tags), transformer.BuilderUpdateRead)(updateReadQB)
-	composeBuilders(builderUpdateWriteFromTags(tags), transformer.BuilderUpdateWrite)(updateWriteQB)
-
-	require.ElementsMatch(t, []string{"Child", "ExtraCreate", "Tags"}, preloadRelationsFromCreateBuilder(createQB))
-	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromCreateBuilder(createQB))
-	require.ElementsMatch(t, []string{"Child", "ExtraRead", "Tags"}, preloadRelationsFromReadBuilder(readQB))
-	require.Equal(t, []string{"ExtraQuery"}, preloadRelationsFromSelectBuilder(queryQB))
-	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromDeleteBuilder(deleteQB))
-	require.ElementsMatch(t, []string{"Child", "Tags", "ExtraUpdateRead"}, preloadRelationsFromReadBuilder(updateReadQB))
-	require.ElementsMatch(t, []string{"Child", "Tags", "ExtraUpdateWrite"}, preloadRelationsFromUpdateBuilder(updateWriteQB))
-	require.ElementsMatch(t, []string{"Child", "Tags"}, syncPathsFromUpdateBuilder(updateWriteQB))
-}
-
-func TestHandlerCrud_HandleCreateUsesCreateRehydration(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedItem]()
-	require.NoError(t, err)
-
-	createdEntity := &crudTaggedItem{
-		Entity: sqlr.Entity[int64]{Id: 1},
-		Name:   "created",
-		Child:  crudTaggedChild{Entity: sqlr.Entity[int64]{Id: 10}, Name: "child"},
-		Tags:   []crudTaggedChild{{Entity: sqlr.Entity[int64]{Id: 11}, Name: "tag"}},
+func (i crudTestListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
+	if i.applyFiltersCalls != nil {
+		(*i.applyFiltersCalls)++
 	}
-	repo := sqlrmocks.NewRepository[int64, crudTaggedItem](t)
-	transformer := sqlhmocks.NewTransformer[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput](t)
-	var createInputName string
-	var createPaths []string
-	var createSyncs []string
-	var transformerEntity *crudTaggedItem
-	var renderedEntity *crudTaggedItem
+	if i.applyFiltersErr != nil {
+		return i.applyFiltersErr
+	}
+	qb.Where("domain = ?", "allowed")
 
-	transformer.EXPECT().
-		TransformCreateInput(mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, input *crudTaggedCreateInput) (*crudTaggedItem, error) {
-			return &crudTaggedItem{Name: input.Name}, nil
-		})
+	return nil
+}
 
-	repo.EXPECT().
-		Create(mock.Anything, mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderCreate)) error {
-			qb := applyBuilderOptions(sqlr.NewQueryBuilderCreate(), opts)
+func (crudTestListInput) ApplyQueryModifiers(qb *sqlr.QueryBuilderSelect) {
+	qb.OrderBy("name")
+}
 
-			transformerEntity = entity
-			createInputName = entity.Name
-			createPaths = preloadRelationsFromCreateBuilder(qb)
-			createSyncs = syncPathsFromCreateBuilder(qb)
-			*entity = *createdEntity
+func (i crudTestListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
+	if i.page.Limit > 0 {
+		qb.Limit(i.page.Limit)
+	}
+	if i.page.Offset > 0 {
+		qb.Offset(i.page.Offset)
+	}
+}
 
-			return nil
-		})
+func (i crudTestListInput) ValidatePagination() error {
+	return i.validatePaginationErr
+}
 
-	transformer.EXPECT().
-		RenderEntityResponse(mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
-			renderedEntity = entity
+func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
 
-			return httpserver.NewStatusResponse(200), nil
-		})
-
-	handler := &HandlerCrud[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput]{
-		repo:          repo,
-		transformer:   transformer,
-		builderCreate: composeBuilders(builderCreateFromTags(tags)),
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+	definition := newCrudTestDefinitionWithList[crudTestListInput]()
+	definition.DeleteScope = func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("deleted = ?", false)
 	}
 
-	_, err = handler.HandleCreate(context.Background(), &crudTaggedCreateInput{Name: "new"})
+	assertPlan := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) {
+		query, arguments, queryErr := qb.ToSql()
+		require.NoError(t, queryErr)
+		require.Contains(t, query, "deleted")
+		require.Contains(t, query, "account_id")
+		require.Contains(t, query, "domain")
+		require.Equal(t, []any{false, 42, "allowed"}, arguments)
+		if rowQuery {
+			require.Contains(t, query, "ORDER BY `name`")
+			require.Contains(t, query, "LIMIT 2")
+			require.Contains(t, query, "OFFSET 1")
+
+			return
+		}
+		require.NotContains(t, query, "ORDER BY")
+		require.NotContains(t, query, "LIMIT")
+		require.NotContains(t, query, "OFFSET")
+	}
+	definition.Query = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestListInput, plan QueryPlan) ([]crudTestEntity, error) {
+		require.NotNil(t, plan.ApplyBuilder)
+		require.NotNil(t, plan.ApplyQueryModifiers)
+		qb := sqlr.NewQueryBuilderSelect()
+		plan.ApplyBuilder(qb)
+		require.NoError(t, plan.ApplyScope(qb))
+		plan.ApplyQueryModifiers(qb)
+		plan.ApplyPagination(qb)
+		assertPlan(qb, true)
+
+		return []crudTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
+	}
+	definition.Count = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestListInput, plan QueryPlan) (int, error) {
+		require.NotNil(t, plan.ApplyBuilder)
+		qb := sqlr.NewQueryBuilderSelect()
+		plan.ApplyBuilder(qb)
+		require.NoError(t, plan.ApplyScope(qb))
+		assertPlan(qb, false)
+
+		return 3, nil
+	}
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
 	require.NoError(t, err)
-	require.Equal(t, []string{"Child", "Tags"}, createPaths)
-	require.Equal(t, []string{"Tags"}, createSyncs)
-	require.Equal(t, "new", createInputName)
-	require.Equal(t, "created", transformerEntity.Name)
-	require.Same(t, transformerEntity, renderedEntity)
-	require.Equal(t, int64(1), renderedEntity.GetId())
-	require.Len(t, renderedEntity.Tags, 1)
+
+	input := crudTestListInput{page: ListPage{Limit: 2, Offset: 1}}
+	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("account_id = ?", 42)
+	})
+
+	output, err := handler.List(context.Background(), &input)
+	require.NoError(t, err)
+	require.Equal(t, ListOutput[crudTestOutput]{
+		Results: []crudTestOutput{{Id: 1, Name: "first"}},
+		Total:   3,
+	}, output)
 }
 
-func TestHandlerCrud_HandleUpdateUsesUpdateRehydration(t *testing.T) {
-	tags, err := parseEntityBuilderTags[crudTaggedItem]()
+func TestCrudHandlerListPaginationErrorRollsBack(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Rollback().Return(nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+	handler, err := newCrudHandler(repository, runner, schema, newCrudTestDefinitionWithList[crudTestListInput]())
 	require.NoError(t, err)
 
-	readEntity := &crudTaggedItem{
-		Entity: sqlr.Entity[int64]{Id: 1},
-		Name:   "before",
-	}
-	updatedEntity := &crudTaggedItem{
-		Entity: sqlr.Entity[int64]{Id: 1},
-		Name:   "after",
-		Child:  crudTaggedChild{Entity: sqlr.Entity[int64]{Id: 10}, Name: "child"},
-		Tags:   []crudTaggedChild{{Entity: sqlr.Entity[int64]{Id: 11}, Name: "tag"}},
-	}
-	repo := sqlrmocks.NewRepository[int64, crudTaggedItem](t)
-	transformer := sqlhmocks.NewTransformer[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput](t)
-	var readCalls int
-	var updateReadPaths []string
-	var updateWritePaths []string
-	var updateWriteSyncs []string
-	var transformerEntity *crudTaggedItem
-	var renderedEntity *crudTaggedItem
+	paginationErr := errors.New("pagination failed")
+	applyFiltersCalls := 0
+	output, err := handler.List(context.Background(), &crudTestListInput{
+		applyFiltersCalls:     &applyFiltersCalls,
+		validatePaginationErr: paginationErr,
+	})
+	require.Zero(t, output)
+	require.ErrorIs(t, err, paginationErr)
+	require.EqualError(t, err, paginationErr.Error())
+	require.Zero(t, applyFiltersCalls)
+}
 
-	transformer.EXPECT().
-		TransformUpdateInput(mock.Anything, mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, input *crudTaggedUpdateInput) (*crudTaggedItem, error) {
+func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Rollback().Return(nil).Once()
+
+	queryCalls := 0
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]crudTestEntity, error) {
+		queryCalls++
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range options {
+			option(qb)
+		}
+
+		return nil, nil
+	}).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+	handler, err := newCrudHandler(repository, runner, schema, newCrudTestDefinitionWithList[crudTestListInput]())
+	require.NoError(t, err)
+
+	filtersErr := errors.New("filters failed")
+	applyFiltersCalls := 0
+	output, err := handler.List(context.Background(), &crudTestListInput{
+		applyFiltersCalls: &applyFiltersCalls,
+		applyFiltersErr:   filtersErr,
+	})
+	require.Zero(t, output)
+	require.ErrorIs(t, err, filtersErr)
+	require.EqualError(t, err, filtersErr.Error())
+	require.Equal(t, 1, queryCalls)
+	require.Equal(t, 1, applyFiltersCalls)
+}
+
+func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	repository.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, entity *crudTestEntity, _ ...func(*sqlr.QueryBuilderCreate)) error {
+		entity.Id = 7
+
+		return nil
+	}).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	handler, err := newCrudHandler(repository, runner, schema, NewCrudDefinition(
+		func(_ context.Context, input *crudTestCreateInput) (*crudTestEntity, error) {
+			return &crudTestEntity{Name: input.Name}, nil
+		},
+		func(_ context.Context, entity *crudTestEntity, input *crudTestUpdateInput) (*crudTestEntity, error) {
 			entity.Name = input.Name
 
 			return entity, nil
-		})
-
-	repo.EXPECT().
-		Read(mock.Anything, int64(1), mock.Anything).
-		RunAndReturn(func(_ context.Context, _ int64, opts ...func(qb *sqlr.QueryBuilderRead)) (*crudTaggedItem, error) {
-			qb := applyBuilderOptions(sqlr.NewQueryBuilderRead(), opts)
-
-			readCalls++
-			updateReadPaths = preloadRelationsFromReadBuilder(qb)
-
-			return readEntity, nil
-		}).
-		Once()
-
-	repo.EXPECT().
-		Update(mock.Anything, mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, entity *crudTaggedItem, opts ...func(qb *sqlr.QueryBuilderUpdate)) (*crudTaggedItem, error) {
-			qb := applyBuilderOptions(sqlr.NewQueryBuilderUpdate(), opts)
-
-			transformerEntity = entity
-			updateWritePaths = preloadRelationsFromUpdateBuilder(qb)
-			updateWriteSyncs = syncPathsFromUpdateBuilder(qb)
-
-			return updatedEntity, nil
-		}).
-		Once()
-
-	transformer.EXPECT().
-		RenderEntityResponse(mock.Anything, mock.Anything).
-		RunAndReturn(func(_ context.Context, entity *crudTaggedItem) (httpserver.Response, error) {
-			renderedEntity = entity
-
-			return httpserver.NewStatusResponse(200), nil
-		})
-
-	handler := &HandlerCrud[int64, crudTaggedItem, crudTaggedCreateInput, crudTaggedUpdateInput]{
-		repo:               repo,
-		transformer:        transformer,
-		builderUpdateRead:  composeBuilders(builderUpdateReadFromTags(tags)),
-		builderUpdateWrite: composeBuilders(builderUpdateWriteFromTags(tags)),
-	}
-
-	_, err = handler.HandleUpdate(context.Background(), 1, &crudTaggedUpdateInput{Name: "changed"})
+		},
+		crudTestPatchInputFromEntity,
+		func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
+		},
+	))
 	require.NoError(t, err)
-	require.Equal(t, 1, readCalls)
-	require.Equal(t, []string{"Child", "Tags"}, updateReadPaths)
-	require.Equal(t, []string{"Child", "Tags"}, updateWritePaths)
-	require.Equal(t, []string{"Tags"}, updateWriteSyncs)
-	require.Same(t, readEntity, transformerEntity)
-	require.Equal(t, "changed", transformerEntity.Name)
-	require.Same(t, updatedEntity, renderedEntity)
+
+	output, err := handler.Create(context.Background(), &crudTestCreateInput{Name: "created"})
+	require.NoError(t, err)
+	require.Equal(t, crudTestOutput{Id: 7, Name: "created"}, output)
 }
 
-func applyBuilderOptions[T any](qb T, opts []func(T)) T {
-	for _, opt := range opts {
-		if opt != nil {
-			opt(qb)
+func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, opts ...func(*sqlr.QueryBuilderSelect)) ([]crudTestEntity, error) {
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range opts {
+			option(qb)
 		}
+
+		query, arguments, err := qb.ToSql()
+		if err != nil {
+			return nil, err
+		}
+		if !strings.Contains(query, "`"+schema.TableName+"`.`"+schema.PrimaryKey.Name+"`") {
+			return nil, errors.New("primary-key lookup is not table qualified")
+		}
+		if !strings.Contains(query, "account_id") {
+			return nil, errors.New("force filter missing from lookup")
+		}
+		require.Equal(t, []any{3, 42}, arguments)
+
+		return []crudTestEntity{{Entity: sqlr.Entity[int]{Id: 3}, Name: "scoped"}}, nil
+	}).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	definition := newCrudTestDefinition()
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	input := &InputById[int]{Id: 3}
+	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("account_id = ?", 42)
+	})
+
+	output, err := handler.Read(context.Background(), input)
+	require.NoError(t, err)
+	require.Equal(t, crudTestOutput{Id: 3, Name: "scoped"}, output)
+}
+
+func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]crudTestEntity, error) {
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range options {
+			option(qb)
+		}
+
+		query, arguments, err := qb.ToSql()
+		if err != nil {
+			return nil, err
+		}
+		require.Contains(t, query, "deleted")
+		require.Contains(t, query, "account_id")
+		require.Contains(t, query, "status")
+		require.Contains(t, query, "LIMIT 2")
+		require.Contains(t, query, "OFFSET 1")
+		require.Equal(t, []any{false, 42, "active"}, arguments)
+
+		return []crudTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
+	}).Once()
+	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
+		query, arguments, err := qb.ToSql()
+		if err != nil {
+			return 0, err
+		}
+		require.Contains(t, query, "deleted")
+		require.Contains(t, query, "account_id")
+		require.Contains(t, query, "status")
+		require.NotContains(t, query, "LIMIT")
+		require.NotContains(t, query, "OFFSET")
+		require.Equal(t, []any{false, 42, "active"}, arguments)
+
+		return 3, nil
+	}).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+	definition := newCrudTestDefinition()
+	definition.DeleteScope = func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("deleted = ?", false)
 	}
 
-	return qb
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	input := ListInput{
+		Filter: sqlc.JsonFilter{Type: "eq", Column: "status", Value: "active"},
+		Page:   ListPage{Limit: 2, Offset: 1},
+	}
+	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("account_id = ?", 42)
+	})
+
+	output, err := handler.List(context.Background(), &input)
+	require.NoError(t, err)
+	require.Equal(t, ListOutput[crudTestOutput]{
+		Results: []crudTestOutput{{Id: 1, Name: "first"}},
+		Total:   3,
+	}, output)
 }
 
-func preloadRelationsFromReadBuilder(qb *sqlr.QueryBuilderRead) []string {
-	return preloadRelations(reflectValueField(qb, "preloads"))
+func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	assertScope := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) error {
+		query, arguments, err := qb.ToSql()
+		if err != nil {
+			return err
+		}
+		require.Contains(t, query, "account_id")
+		require.Contains(t, query, "domain")
+		if rowQuery {
+			require.Contains(t, query, "ORDER BY `name`")
+		} else {
+			require.NotContains(t, query, "ORDER BY")
+		}
+		require.Equal(t, []any{7, "allowed"}, arguments)
+
+		return nil
+	}
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]crudTestEntity, error) {
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range options {
+			option(qb)
+		}
+
+		return nil, assertScope(qb, true)
+	}).Once()
+	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
+		return 0, assertScope(qb, false)
+	}).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+	definition := newCrudTestDefinitionWithList[crudTestListInput]()
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	applyFiltersCalls := 0
+	input := crudTestListInput{applyFiltersCalls: &applyFiltersCalls}
+	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("account_id = ?", 7)
+	})
+
+	output, err := handler.List(context.Background(), &input)
+	require.NoError(t, err)
+	require.Empty(t, output.Results)
+	require.Zero(t, output.Total)
+	require.Equal(t, 2, applyFiltersCalls)
 }
 
-func preloadRelationsFromCreateBuilder(qb *sqlr.QueryBuilderCreate) []string {
-	return preloadRelations(reflectValueField(qb, "preloads"))
-}
+func TestCrudHandlerDeleteReturnsNoContentWithoutOutput(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
 
-func preloadRelationsFromSelectBuilder(qb *sqlr.QueryBuilderSelect) []string {
-	return preloadRelations(reflectValueField(qb, "preloads"))
-}
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
 
-func preloadRelationsFromUpdateBuilder(qb *sqlr.QueryBuilderUpdate) []string {
-	return preloadRelations(reflectValueField(qb, "preloads"))
-}
-
-func preloadRelations(preloadsValue reflect.Value) []string {
-	relations := make([]string, 0, preloadsValue.Len())
-	for i := 0; i < preloadsValue.Len(); i++ {
-		relations = append(relations, preloadsValue.Index(i).FieldByName("relation").String())
+	definition := newCrudTestDefinition()
+	definition.DeleteOperation = func(context.Context, sqlr.TTx, sqlr.CountingRepositoryTx[int, crudTestEntity], *InputById[int]) (*crudTestEntity, error) {
+		return nil, nil
 	}
 
-	return relations
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	response, err := handler.DeleteNoContent(context.Background(), &InputById[int]{Id: 9})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, response.StatusCode())
 }
 
-func syncPathsFromCreateBuilder(qb *sqlr.QueryBuilderCreate) []string {
-	return syncPathsFromBuilder(qb)
+func TestCrudHandlerDeleteUsesConfiguredOutput(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	repository.EXPECT().Query(mock.Anything, mock.Anything).Return([]crudTestEntity{{
+		Entity: sqlr.Entity[int]{Id: 9},
+		Name:   "visible",
+	}}, nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	definition := newCrudTestDefinition()
+	definition.Delete = func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, crudTestEntity], entity *crudTestEntity) error {
+		entity.Name = "deleted"
+
+		return nil
+	}
+	definition.DeleteOutput = definition.Output
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	output, err := handler.Delete(context.Background(), &InputById[int]{Id: 9})
+	require.NoError(t, err)
+	require.Equal(t, crudTestOutput{Id: 9, Name: "deleted"}, output)
 }
 
-func syncPathsFromUpdateBuilder(qb *sqlr.QueryBuilderUpdate) []string {
-	return syncPathsFromBuilder(qb)
+func TestCrudHandlerDeleteOperationUsesConfiguredOutput(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	definition := newCrudTestDefinition()
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		require.Same(t, repository, actualRepository)
+		require.Equal(t, 11, input.Id)
+
+		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}, Name: "custom"}, nil
+	}
+	definition.DeleteOutput = definition.Output
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	output, err := handler.Delete(context.Background(), &InputById[int]{Id: 11})
+	require.NoError(t, err)
+	require.Equal(t, crudTestOutput{Id: 11, Name: "custom"}, output)
 }
 
-func syncPathsFromDeleteBuilder(qb *sqlr.QueryBuilderDelete) []string {
-	return syncPathsFromBuilder(qb)
-}
+func TestCrudHandlerDeleteOutputErrorRollsBack(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Rollback().Return(nil).Once()
 
-func syncPathsFromBuilder(qb any) []string {
-	associationValue := reflectValueField(qb, "associationOptions")
-	syncPathsValue := associationValue.FieldByName("syncPaths")
-	paths := make([]string, syncPathsValue.Len())
-	for i := 0; i < syncPathsValue.Len(); i++ {
-		paths[i] = syncPathsValue.Index(i).String()
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	definition := newCrudTestDefinition()
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		require.Same(t, repository, actualRepository)
+
+		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil
+	}
+	definition.DeleteOutput = func(context.Context, *crudTestEntity) (crudTestOutput, error) {
+		return crudTestOutput{}, errors.New("output failed")
 	}
 
-	return paths
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	output, err := handler.Delete(context.Background(), &InputById[int]{Id: 12})
+	require.Zero(t, output)
+	require.ErrorContains(t, err, "failed to transform deleted entity: output failed")
 }
 
-func reflectValueField(value any, fieldName string) reflect.Value {
-	v := reflect.ValueOf(value)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
+func newCrudTestDefinition() CrudDefinition[int, crudTestEntity, int, crudTestCreateInput, crudTestUpdateInput, ListInput, crudTestOutput] {
+	return newCrudTestDefinitionWithList[ListInput]()
+}
 
-	return v.FieldByName(fieldName)
+func newCrudTestDefinitionWithList[LI ListInputSource]() CrudDefinition[int, crudTestEntity, int, crudTestCreateInput, crudTestUpdateInput, LI, crudTestOutput] {
+	return CrudDefinition[int, crudTestEntity, int, crudTestCreateInput, crudTestUpdateInput, LI, crudTestOutput]{
+		CreateInput: func(_ context.Context, input *crudTestCreateInput) (*crudTestEntity, error) {
+			return &crudTestEntity{Name: input.Name}, nil
+		},
+		UpdateInput: func(_ context.Context, entity *crudTestEntity, input *crudTestUpdateInput) (*crudTestEntity, error) {
+			entity.Name = input.Name
+
+			return entity, nil
+		},
+		PatchInputFromEntity: crudTestPatchInputFromEntity,
+		Output: func(_ context.Context, entity *crudTestEntity) (crudTestOutput, error) {
+			return crudTestOutput{Id: entity.Id, Name: entity.Name}, nil
+		},
+	}
+}
+
+func crudTestPatchInputFromEntity(_ context.Context, entity *crudTestEntity) (*crudTestUpdateInput, error) {
+	return &crudTestUpdateInput{
+		InputById: InputById[int]{Id: entity.Id},
+		Name:      entity.Name,
+	}, nil
+}
+
+func newTestTx(t *testing.T) *sqlcmocks.Tx {
+	t.Helper()
+
+	return sqlcmocks.NewTx(t)
+}
+
+func TestCrudHandlerCustomOperationsReceiveConfiguredRepository(t *testing.T) {
+	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Times(6)
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	assertRepository := func(actual sqlr.CountingRepositoryTx[int, crudTestEntity]) {
+		require.Same(t, repository, actual)
+	}
+	definition := newCrudTestDefinition()
+	definition.CreateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestCreateInput) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 1}, nil
+	}
+	definition.ReadOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *InputById[int]) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 2}, nil
+	}
+	definition.UpdateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestUpdateInput) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 3}, nil
+	}
+	definition.PatchOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *PatchInput[int]) (crudTestOutput, error) {
+		assertRepository(actual)
+
+		return crudTestOutput{Id: 4}, nil
+	}
+	definition.ListOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *ListInput) (ListOutput[crudTestOutput], error) {
+		assertRepository(actual)
+
+		return ListOutput[crudTestOutput]{Total: 5}, nil
+	}
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+		assertRepository(actual)
+
+		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil
+	}
+	definition.DeleteOutput = definition.Output
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	created, err := handler.Create(t.Context(), &crudTestCreateInput{})
+	require.NoError(t, err)
+	require.Equal(t, 1, created.Id)
+	read, err := handler.Read(t.Context(), &InputById[int]{Id: 2})
+	require.NoError(t, err)
+	require.Equal(t, 2, read.Id)
+	updated, err := handler.Update(t.Context(), &crudTestUpdateInput{InputById: InputById[int]{Id: 3}})
+	require.NoError(t, err)
+	require.Equal(t, 3, updated.Id)
+	patched, err := handler.Patch(t.Context(), &PatchInput[int]{InputById: InputById[int]{Id: 4}})
+	require.NoError(t, err)
+	require.Equal(t, 4, patched.Id)
+	listed, err := handler.List(t.Context(), &ListInput{})
+	require.NoError(t, err)
+	require.Equal(t, 5, listed.Total)
+	deleted, err := handler.Delete(t.Context(), &InputById[int]{Id: 6})
+	require.NoError(t, err)
+	require.Equal(t, 6, deleted.Id)
 }

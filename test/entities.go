@@ -13,16 +13,16 @@ import (
 
 type Post struct {
 	sqlr.Entity[int64]
-	AuthorID int64  `db:"author_id"`
+	AuthorId int64  `db:"author_id"`
 	Title    string `db:"title"`
 	Status   string `db:"status"`
 	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,query"`
-	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags" sqlh:"preload:read,update,query;sync:create,update,delete"`
+	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags;sync:update" sqlh:"preload:read,update,query;sync:create,update,delete"`
 }
 
 type MutationPreloadPost struct {
 	sqlr.Entity[int64]
-	AuthorID int64  `db:"author_id"`
+	AuthorId int64  `db:"author_id"`
 	Title    string `db:"title"`
 	Status   string `db:"status"`
 	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags;parentKey:post_id;relatedKey:tag_id" sqlh:"preload:create,update;sync:create,update,delete"`
@@ -43,45 +43,47 @@ type Author struct {
 }
 
 type PostInputTag struct {
-	ID   int64  `json:"id"`
+	Id   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
 type PostCreateInput struct {
-	AuthorID int64          `json:"author_id"`
+	AuthorId int64          `json:"author_id"`
 	Title    string         `json:"title"`
 	Status   string         `json:"status"`
 	Tags     []PostInputTag `json:"tags"`
 }
 
 type PostUpdateInput struct {
-	AuthorID int64          `json:"author_id"`
+	sqlh.InputById[int64]
+	AuthorId int64          `json:"author_id"`
 	Title    string         `json:"title"`
 	Status   string         `json:"status"`
 	Tags     []PostInputTag `json:"tags"`
 }
 
 type MutationPreloadPostCreateInput struct {
-	AuthorID int64                         `json:"author_id"`
+	AuthorId int64                         `json:"author_id"`
 	Title    string                        `json:"title"`
 	Status   string                        `json:"status"`
 	Tags     []MutationPreloadPostInputTag `json:"tags"`
 }
 
 type MutationPreloadPostUpdateInput struct {
-	AuthorID int64                         `json:"author_id"`
+	sqlh.InputById[int64]
+	AuthorId int64                         `json:"author_id"`
 	Title    string                        `json:"title"`
 	Status   string                        `json:"status"`
 	Tags     []MutationPreloadPostInputTag `json:"tags"`
 }
 
 type MutationPreloadPostInputTag struct {
-	ID int64 `json:"id"`
+	Id int64 `json:"id"`
 }
 
 type PostOutput struct {
-	ID        int64         `json:"id"`
-	AuthorID  int64         `json:"author_id"`
+	Id        int64         `json:"id"`
+	AuthorId  int64         `json:"author_id"`
 	Title     string        `json:"title"`
 	Status    string        `json:"status"`
 	Author    *AuthorOutput `json:"author,omitempty"`
@@ -91,18 +93,18 @@ type PostOutput struct {
 }
 
 type AuthorOutput struct {
-	ID   int64  `json:"id"`
+	Id   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
 type TagOutput struct {
-	ID   int64  `json:"id"`
+	Id   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
 type MutationPreloadPostOutput struct {
-	ID        int64       `json:"id"`
-	AuthorID  int64       `json:"author_id"`
+	Id        int64       `json:"id"`
+	AuthorId  int64       `json:"author_id"`
 	Title     string      `json:"title"`
 	Status    string      `json:"status"`
 	Tags      []TagOutput `json:"tags,omitempty"`
@@ -116,7 +118,7 @@ type MutationPreloadPostTransformer struct{}
 
 func (t *PostTransformer) TransformCreateInput(_ context.Context, input *PostCreateInput) (*Post, error) {
 	return &Post{
-		AuthorID: input.AuthorID,
+		AuthorId: input.AuthorId,
 		Title:    input.Title,
 		Status:   input.Status,
 		Tags:     inputTagsToTags(input.Tags),
@@ -124,7 +126,7 @@ func (t *PostTransformer) TransformCreateInput(_ context.Context, input *PostCre
 }
 
 func (t *PostTransformer) TransformUpdateInput(_ context.Context, post *Post, input *PostUpdateInput) (*Post, error) {
-	post.AuthorID = input.AuthorID
+	post.AuthorId = input.AuthorId
 	post.Title = input.Title
 	post.Status = input.Status
 	post.Tags = inputTagsToTags(input.Tags)
@@ -132,11 +134,26 @@ func (t *PostTransformer) TransformUpdateInput(_ context.Context, post *Post, in
 	return post, nil
 }
 
-func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (any, error) {
+func (t *PostTransformer) TransformPatchInputFromEntity(_ context.Context, post *Post) (*PostUpdateInput, error) {
+	tags := make([]PostInputTag, len(post.Tags))
+	for i, tag := range post.Tags {
+		tags[i] = PostInputTag{Id: tag.Id, Name: tag.Name}
+	}
+
+	return &PostUpdateInput{
+		InputById: sqlh.InputById[int64]{Id: post.Id},
+		AuthorId:  post.AuthorId,
+		Title:     post.Title,
+		Status:    post.Status,
+		Tags:      tags,
+	}, nil
+}
+
+func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (PostOutput, error) {
 	var author *AuthorOutput
 	if post.Author.Id != 0 || post.Author.Name != "" {
 		author = &AuthorOutput{
-			ID:   post.Author.Id,
+			Id:   post.Author.Id,
 			Name: post.Author.Name,
 		}
 	}
@@ -144,14 +161,14 @@ func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (any, e
 	tags := make([]TagOutput, len(post.Tags))
 	for i, tag := range post.Tags {
 		tags[i] = TagOutput{
-			ID:   tag.Id,
+			Id:   tag.Id,
 			Name: tag.Name,
 		}
 	}
 
 	return PostOutput{
-		ID:        post.Id,
-		AuthorID:  post.AuthorID,
+		Id:        post.Id,
+		AuthorId:  post.AuthorId,
 		Title:     post.Title,
 		Status:    post.Status,
 		Author:    author,
@@ -163,7 +180,7 @@ func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (any, e
 
 func (t *MutationPreloadPostTransformer) TransformCreateInput(_ context.Context, input *MutationPreloadPostCreateInput) (*MutationPreloadPost, error) {
 	return &MutationPreloadPost{
-		AuthorID: input.AuthorID,
+		AuthorId: input.AuthorId,
 		Title:    input.Title,
 		Status:   input.Status,
 		Tags:     mutationPreloadInputTagsToTags(input.Tags),
@@ -171,7 +188,7 @@ func (t *MutationPreloadPostTransformer) TransformCreateInput(_ context.Context,
 }
 
 func (t *MutationPreloadPostTransformer) TransformUpdateInput(_ context.Context, post *MutationPreloadPost, input *MutationPreloadPostUpdateInput) (*MutationPreloadPost, error) {
-	post.AuthorID = input.AuthorID
+	post.AuthorId = input.AuthorId
 	post.Title = input.Title
 	post.Status = input.Status
 	post.Tags = mutationPreloadInputTagsToTags(input.Tags)
@@ -179,18 +196,33 @@ func (t *MutationPreloadPostTransformer) TransformUpdateInput(_ context.Context,
 	return post, nil
 }
 
-func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post *MutationPreloadPost) (any, error) {
+func (t *MutationPreloadPostTransformer) TransformPatchInputFromEntity(_ context.Context, post *MutationPreloadPost) (*MutationPreloadPostUpdateInput, error) {
+	tags := make([]MutationPreloadPostInputTag, len(post.Tags))
+	for i, tag := range post.Tags {
+		tags[i] = MutationPreloadPostInputTag{Id: tag.Id}
+	}
+
+	return &MutationPreloadPostUpdateInput{
+		InputById: sqlh.InputById[int64]{Id: post.Id},
+		AuthorId:  post.AuthorId,
+		Title:     post.Title,
+		Status:    post.Status,
+		Tags:      tags,
+	}, nil
+}
+
+func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post *MutationPreloadPost) (MutationPreloadPostOutput, error) {
 	tags := make([]TagOutput, len(post.Tags))
 	for i, tag := range post.Tags {
 		tags[i] = TagOutput{
-			ID:   tag.Id,
+			Id:   tag.Id,
 			Name: tag.Name,
 		}
 	}
 
 	return MutationPreloadPostOutput{
-		ID:        post.Id,
-		AuthorID:  post.AuthorID,
+		Id:        post.Id,
+		AuthorId:  post.AuthorId,
 		Title:     post.Title,
 		Status:    post.Status,
 		Tags:      tags,
@@ -200,11 +232,28 @@ func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post
 }
 
 func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(1, "post", sqlh.NewJsonResultsTransformer[int64, Post, PostCreateInput, PostUpdateInput](&PostTransformer{}))
+	transformer := &PostTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformPatchInputFromEntity,
+		transformer.TransformOutput,
+	)
+	definition.DeleteOutput = definition.Output
+
+	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleCrudDefinition(definition))
 }
 
 func NewMutationPreloadPostCrud() gosolinehttpserver.RegisterFactoryFunc {
-	return sqlh.WithCrudHandlers(1, "preload-post", sqlh.NewJsonResultsTransformer[int64, MutationPreloadPost, MutationPreloadPostCreateInput, MutationPreloadPostUpdateInput](&MutationPreloadPostTransformer{}))
+	transformer := &MutationPreloadPostTransformer{}
+	definition := sqlh.NewCrudDefinition(
+		transformer.TransformCreateInput,
+		transformer.TransformUpdateInput,
+		transformer.TransformPatchInputFromEntity,
+		transformer.TransformOutput,
+	)
+
+	return sqlh.WithCrudHandlers(1, "preload-post", sqlh.SimpleCrudDefinition(definition))
 }
 
 func inputTagsToTags(inputTags []PostInputTag) []Tag {
@@ -215,7 +264,7 @@ func inputTagsToTags(inputTags []PostInputTag) []Tag {
 	tags := make([]Tag, len(inputTags))
 	for i, tag := range inputTags {
 		tags[i] = Tag{
-			Entity: sqlr.Entity[int64]{Id: tag.ID},
+			Entity: sqlr.Entity[int64]{Id: tag.Id},
 			Name:   tag.Name,
 		}
 	}
@@ -230,7 +279,7 @@ func mutationPreloadInputTagsToTags(inputTags []MutationPreloadPostInputTag) []T
 
 	tags := make([]Tag, len(inputTags))
 	for i, tag := range inputTags {
-		tags[i] = Tag{Entity: sqlr.Entity[int64]{Id: tag.ID}}
+		tags[i] = Tag{Entity: sqlr.Entity[int64]{Id: tag.Id}}
 	}
 
 	return tags
