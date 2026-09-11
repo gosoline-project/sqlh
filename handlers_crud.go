@@ -56,8 +56,9 @@ type IdentityLookup[Id sqlr.KeyTypes, K sqlr.KeyTypes, E sqlr.Entitier[K]] func(
 ) (*E, error)
 
 // ListQuery customizes the query part of a list operation. ApplyScope includes
-// delete visibility, user, and force filters without pagination. ApplyPagination
-// applies the request page after the scope has been installed.
+// delete visibility, user, and force filters. ApplyQueryModifiers applies
+// row-only modifiers such as grouping and ordering. ApplyPagination applies the
+// request page after the modifiers.
 type ListQuery[K sqlr.KeyTypes, E sqlr.Entitier[K], LI ListInputSource] func(
 	ctx context.Context,
 	tx sqlr.TTx,
@@ -67,7 +68,8 @@ type ListQuery[K sqlr.KeyTypes, E sqlr.Entitier[K], LI ListInputSource] func(
 ) ([]E, error)
 
 // ListCount customizes the total calculation for a list operation. It receives
-// the same scope as ListQuery, but pagination must not be applied to the count.
+// the same builder and scope as ListQuery, but query modifiers and pagination
+// must not be applied to the count.
 type ListCount[K sqlr.KeyTypes, E sqlr.Entitier[K], LI ListInputSource] func(
 	ctx context.Context,
 	tx sqlr.TTx,
@@ -144,18 +146,19 @@ type CrudDefinition[
 	// eligible for the configured delete strategy.
 	DeleteScope DeleteScope
 
-	// CreateOperation, ReadOperation, UpdateOperation, ListOperation, and
-	// PatchOperation replace their corresponding default operation after
-	// transaction setup.
-	CreateOperation TxOperation[IC, O]
-	ReadOperation   TxOperation[InputById[Id], O]
-	UpdateOperation TxOperation[IU, O]
-	PatchOperation  TxOperation[PatchInput[Id], O]
-	ListOperation   TxOperation[LI, ListOutput[O]]
+	// CreateOperation, ReadOperation, UpdateOperation, PatchOperation,
+	// ListOperation, and DeleteOperation replace their corresponding default
+	// operation after transaction setup. Each override receives SQLH's configured
+	// repository and the active transaction.
+	CreateOperation CrudOperation[K, E, IC, O]
+	ReadOperation   CrudOperation[K, E, InputById[Id], O]
+	UpdateOperation CrudOperation[K, E, IU, O]
+	PatchOperation  CrudOperation[K, E, PatchInput[Id], O]
+	ListOperation   CrudOperation[K, E, LI, ListOutput[O]]
 	// DeleteOperation replaces the complete default delete mutation and returns
 	// the entity used by DeleteOutput. When it is nil, SQLH uses the configured
 	// identity, scope, and delete strategy.
-	DeleteOperation TxOperation[InputById[Id], *E]
+	DeleteOperation CrudOperation[K, E, InputById[Id], *E]
 	// DeleteOutput maps the deleted entity to the negotiated response value used
 	// by Delete. It has the same signature as Output, so callers can assign
 	// Output directly. DeleteNoContent does not call this mapper.
