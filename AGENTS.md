@@ -31,9 +31,13 @@ Run commands from the repository root.
 - `go test -count=1 . -run '^TestName$'`
 
 ### Integration tests
-The integration suite requires MySQL fixtures:
+The suite starts its own MySQL container through dockertest, so it needs a
+running Docker daemon but no manual database setup:
 - `go test -count=1 -timeout=8m -tags='integration fixtures' ./test`
 - `go test -count=1 -timeout=8m -tags='integration fixtures' ./test -run '^TestCrudIntegrationTestSuite$'`
+
+`go test ./...` skips this suite because of the build tags, and reports `no test
+files` for `./test`. Use the tagged command above to run it.
 
 ### Format and lint
 - `gofmt -w .`
@@ -78,9 +82,16 @@ The integration suite requires MySQL fixtures:
 - Test commit, rollback, and panic paths when changing transactions.
 - Run integration tests when relation synchronization or HTTP CRUD behavior changes.
 
+## What CI checks
+The `ci` workflow runs four jobs on every pull request and on pushes to `main`:
+- `build`: `go build ./...`;
+- `test`: `go test -v ./...` (unit tests only);
+- `integration`: `go test -count=1 -timeout=8m -tags='integration fixtures' ./test`;
+- `lint`: golangci-lint, configured with the `integration` and `fixtures` build tags.
+
 ## Finish checklist
 - `gofmt -w .`
 - `go build ./...`
 - `go test -count=1 ./...`
+- `go test -count=1 -timeout=8m -tags='integration fixtures' ./test`
 - `golangci-lint run ./...`
-- integration suite when applicable.

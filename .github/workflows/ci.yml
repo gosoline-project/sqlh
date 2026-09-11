@@ -44,6 +44,26 @@ jobs:
       - name: Test
         run: go test -v ./...
 
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    # The suite provisions its own MySQL container through dockertest, so allow
+    # for a cold image pull. Keep this above the go test timeout so an overrun
+    # still produces a Go stack trace instead of a killed job.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Integration test
+        run: go test -count=1 -timeout=8m -tags='integration fixtures' ./test
+
   lint:
     name: lint
     runs-on: ubuntu-latest
