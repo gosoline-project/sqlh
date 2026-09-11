@@ -29,9 +29,10 @@
 // registration and operation decoration. [CrudDefinition] provides mapping,
 // identity, query, count, and delete extension points. Its operation fields
 // replace complete default operations when an endpoint needs custom behavior.
-// A custom UpdateOperation does not replace the mapping used by the default
-// PATCH operation. A custom PatchOperation replaces the complete default PATCH
-// pipeline.
+// Each operation override receives the active [sqlr.TTx] and the configured
+// [sqlr.CountingRepositoryTx]. A custom UpdateOperation does not replace the
+// mapping used by the default PATCH operation. A custom PatchOperation replaces
+// the complete default PATCH pipeline.
 //
 // # Force filters and lists
 //
@@ -44,10 +45,16 @@
 //
 // [ListInput] provides filters, nested pagination, and force filters. [ListOutput]
 // contains typed results and an explicit total. Default query and count paths
-// use the same user filters, force filters, and soft-delete scope. Custom Query
-// and Count callbacks must call QueryPlan.ApplyScope. A custom Query callback
-// must apply pagination after that scope. Applications can embed or replace the
-// list input when they need domain-specific query behavior.
+// use the same user filters, force filters, and soft-delete scope. Custom list
+// inputs must implement [ListInputSource], including ApplyQueryModifiers. Use a
+// no-op implementation when the input has no row-only modifiers.
+//
+// Custom Query and Count callbacks must call QueryPlan.ApplyBuilder and then
+// QueryPlan.ApplyScope. A custom Query callback must then call
+// QueryPlan.ApplyQueryModifiers and QueryPlan.ApplyPagination, in that order.
+// A custom Count callback must not call ApplyQueryModifiers or ApplyPagination.
+// Applications can embed or replace the list input when they need
+// domain-specific query behavior.
 //
 // # JSON Merge Patch
 //

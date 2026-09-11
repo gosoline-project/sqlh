@@ -42,11 +42,12 @@ The integration suite requires MySQL fixtures:
 
 ## API conventions
 - Keep public handlers typed as `func(context.Context, *Input) (Output, error)`.
-- `*Operation` fields replace a complete default operation.
+- `*Operation` fields replace a complete default operation. Each override receives the active transaction and the configured counting repository.
 - `DeleteOperation` returns the deleted entity. `Delete` maps it through `DeleteOutput`; `DeleteNoContent` skips mapping and returns 204.
 - `DeleteOutput` has the same signature as `Output`, so callers can assign `definition.DeleteOutput = definition.Output`.
 - Force filters are server-owned restrictions. SQLH applies them; custom list inputs must not duplicate them in `ApplyFilters`.
-- Custom list query and count callbacks must apply `QueryPlan.ApplyBuilder` and `QueryPlan.ApplyScope`. Only query callbacks apply pagination.
+- Custom list inputs must implement every `ListInputSource` phase. Use a no-op `ApplyQueryModifiers` when no row-only modifiers are needed.
+- Custom list query and count callbacks must apply `QueryPlan.ApplyBuilder` and `QueryPlan.ApplyScope`. Query callbacks must then apply `ApplyQueryModifiers` and `ApplyPagination`, in that order. Count callbacks must apply neither.
 - Relation behavior comes from `sqlh` tags. Do not add public query-builder hooks without a demonstrated requirement.
 
 ## Struct tags
