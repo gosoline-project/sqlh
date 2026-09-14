@@ -95,6 +95,76 @@ func TestPatchDocumentMergeIntoUsesJSONMergePatchSemantics(t *testing.T) {
 	require.Nil(t, target.Comment)
 }
 
+func TestPatchDocumentMergeIntoRemovesMapEntries(t *testing.T) {
+	target := map[string]any{
+		"nickname": "Ace",
+		"name":     "Ada",
+		"profile": map[string]any{
+			"city":    "Berlin",
+			"country": "Germany",
+		},
+	}
+	document, err := NewPatchDocument([]byte(`{"nickname":null,"profile":{"city":null}}`))
+	require.NoError(t, err)
+
+	require.NoError(t, document.MergeInto(&target))
+	require.Equal(t, map[string]any{
+		"name":    "Ada",
+		"profile": map[string]any{"country": "Germany"},
+	}, target)
+}
+
+func TestPatchDocumentMergeIntoClearsEmbeddedValues(t *testing.T) {
+	type Nickname string
+	type Rating int
+	type Labels map[string]string
+	rating := Rating(5)
+	target := struct {
+		Nickname
+		*Rating
+		Labels
+		Name string `json:"name"`
+	}{
+		Nickname: "Ace",
+		Rating:   &rating,
+		Labels:   Labels{"status": "active"},
+		Name:     "Ada",
+	}
+	document, err := NewPatchDocument([]byte(`{"Nickname":null,"Rating":null,"Labels":null}`))
+	require.NoError(t, err)
+
+	require.NoError(t, document.MergeInto(&target))
+	require.Empty(t, target.Nickname)
+	require.Nil(t, target.Rating)
+	require.Nil(t, target.Labels)
+	require.Equal(t, "Ada", target.Name)
+}
+
+func TestPatchDocumentMergeIntoPreservesServerOwnedFields(t *testing.T) {
+	target := struct {
+		*InputById[int]
+		Name string `json:"name"`
+	}{
+		InputById: &InputById[int]{Id: 9},
+		Name:      "Ada",
+	}
+	target.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
+		qb.Where("account_id = ?", 42)
+	})
+	document, err := NewPatchDocument([]byte(`{"name":null,"id":100}`))
+	require.NoError(t, err)
+
+	require.NoError(t, document.MergeInto(&target))
+	require.Empty(t, target.Name)
+	require.Equal(t, 9, target.GetId())
+	qb := sqlr.NewQueryBuilderSelect()
+	applyForceFilters(target, qb)
+	query, arguments, err := qb.ToSql()
+	require.NoError(t, err)
+	require.Contains(t, query, "account_id")
+	require.Equal(t, []any{42}, arguments)
+}
+
 func TestPatchDocumentTracksPresenceAndNull(t *testing.T) {
 	document, err := NewPatchDocument([]byte(`{"tags":null,"profile":{"city":"Paris"}}`))
 	require.NoError(t, err)

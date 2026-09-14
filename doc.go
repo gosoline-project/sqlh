@@ -75,6 +75,7 @@
 // must preserve. SQLH retains the original document separately from the merged
 // input, so it can distinguish an omitted field from an explicitly supplied
 // zero value or null. JSON Merge Patch replaces arrays as complete values.
+// A null removes a map entry or resets a scalar field to its zero value.
 // For direct association fields, null and an empty array both clear the
 // association. A null belongs-to association also clears its owning foreign-key
 // field. To store NULL, use a nullable field and database column.

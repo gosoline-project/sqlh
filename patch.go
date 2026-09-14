@@ -158,6 +158,11 @@ func resetPatchInput(value reflect.Value) {
 
 		return
 	}
+	if value.Kind() == reflect.Map {
+		value.Clear()
+
+		return
+	}
 	if value.Kind() != reflect.Struct {
 		return
 	}
@@ -174,7 +179,11 @@ func resetPatchInput(value reflect.Value) {
 		if !valid {
 			continue
 		}
-		if structField.Anonymous && jsonName == lowerCamel(structField.Name) {
+		fieldType := structField.Type
+		if fieldType.Kind() == reflect.Pointer {
+			fieldType = fieldType.Elem()
+		}
+		if structField.Anonymous && fieldType.Kind() == reflect.Struct && jsonName == lowerCamel(structField.Name) {
 			resetPatchInput(field)
 
 			continue
