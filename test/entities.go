@@ -22,9 +22,10 @@ type Post struct {
 
 type MutationPreloadPost struct {
 	sqlr.Entity[int64]
-	AuthorId int64  `db:"author_id"`
+	AuthorId *int64 `db:"author_id"`
 	Title    string `db:"title"`
 	Status   string `db:"status"`
+	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,update,query;sync:update"`
 	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags;parentKey:post_id;relatedKey:tag_id" sqlh:"preload:create,update;sync:create,update,delete"`
 }
 
@@ -71,9 +72,10 @@ type MutationPreloadPostCreateInput struct {
 
 type MutationPreloadPostUpdateInput struct {
 	sqlh.InputById[int64]
-	AuthorId int64                         `json:"author_id"`
+	AuthorId *int64                        `json:"author_id"`
 	Title    string                        `json:"title"`
 	Status   string                        `json:"status"`
+	Author   *AuthorOutput                 `json:"author"`
 	Tags     []MutationPreloadPostInputTag `json:"tags"`
 }
 
@@ -179,8 +181,10 @@ func (t *PostTransformer) TransformOutput(_ context.Context, post *Post) (PostOu
 }
 
 func (t *MutationPreloadPostTransformer) TransformCreateInput(_ context.Context, input *MutationPreloadPostCreateInput) (*MutationPreloadPost, error) {
+	authorId := input.AuthorId
+
 	return &MutationPreloadPost{
-		AuthorId: input.AuthorId,
+		AuthorId: &authorId,
 		Title:    input.Title,
 		Status:   input.Status,
 		Tags:     mutationPreloadInputTagsToTags(input.Tags),
@@ -189,6 +193,13 @@ func (t *MutationPreloadPostTransformer) TransformCreateInput(_ context.Context,
 
 func (t *MutationPreloadPostTransformer) TransformUpdateInput(_ context.Context, post *MutationPreloadPost, input *MutationPreloadPostUpdateInput) (*MutationPreloadPost, error) {
 	post.AuthorId = input.AuthorId
+	post.Author = Author{}
+	if input.Author != nil {
+		post.Author = Author{
+			Entity: sqlr.Entity[int64]{Id: input.Author.Id},
+			Name:   input.Author.Name,
+		}
+	}
 	post.Title = input.Title
 	post.Status = input.Status
 	post.Tags = mutationPreloadInputTagsToTags(input.Tags)
@@ -202,11 +213,17 @@ func (t *MutationPreloadPostTransformer) TransformPatchInputFromEntity(_ context
 		tags[i] = MutationPreloadPostInputTag{Id: tag.Id}
 	}
 
+	var author *AuthorOutput
+	if post.Author.Id != 0 {
+		author = &AuthorOutput{Id: post.Author.Id, Name: post.Author.Name}
+	}
+
 	return &MutationPreloadPostUpdateInput{
 		InputById: sqlh.InputById[int64]{Id: post.Id},
 		AuthorId:  post.AuthorId,
 		Title:     post.Title,
 		Status:    post.Status,
+		Author:    author,
 		Tags:      tags,
 	}, nil
 }
@@ -220,9 +237,14 @@ func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post
 		}
 	}
 
+	authorId := int64(0)
+	if post.AuthorId != nil {
+		authorId = *post.AuthorId
+	}
+
 	return MutationPreloadPostOutput{
 		Id:        post.Id,
-		AuthorId:  post.AuthorId,
+		AuthorId:  authorId,
 		Title:     post.Title,
 		Status:    post.Status,
 		Tags:      tags,

@@ -170,17 +170,6 @@ func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Rollback().Return(nil).Once()
 
-	queryCalls := 0
-	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]crudTestEntity, error) {
-		queryCalls++
-		qb := sqlr.NewQueryBuilderSelect()
-		for _, option := range options {
-			option(qb)
-		}
-
-		return nil, nil
-	}).Once()
-
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
 	require.NoError(t, err)
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
@@ -196,9 +185,9 @@ func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
 	})
 	require.Zero(t, output)
 	require.ErrorIs(t, err, filtersErr)
-	require.EqualError(t, err, filtersErr.Error())
-	require.Equal(t, 1, queryCalls)
 	require.Equal(t, 1, applyFiltersCalls)
+	repository.AssertNotCalled(t, "Query", mock.Anything, mock.Anything)
+	repository.AssertNotCalled(t, "Count", mock.Anything, mock.Anything)
 }
 
 func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {

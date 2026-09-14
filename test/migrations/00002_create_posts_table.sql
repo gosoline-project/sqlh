@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE posts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    author_id BIGINT NOT NULL,
+    author_id BIGINT NULL,
     title VARCHAR(255) NOT NULL,
     status VARCHAR(50) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

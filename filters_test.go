@@ -60,5 +60,7 @@ func TestForceFiltersAreRequestLocalAndDefensive(t *testing.T) {
 func TestListInputRejectsNegativePagination(t *testing.T) {
 	require.Error(t, (ListInput{Page: ListPage{Limit: -1}}).ValidatePagination())
 	require.Error(t, (ListInput{Page: ListPage{Offset: -1}}).ValidatePagination())
+	require.Error(t, (ListInput{Page: ListPage{Offset: 1}}).ValidatePagination())
 	require.NoError(t, (ListInput{}).ValidatePagination())
+	require.NoError(t, (ListInput{Page: ListPage{Limit: 10, Offset: 20}}).ValidatePagination())
 }

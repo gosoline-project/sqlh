@@ -290,7 +290,7 @@ func (r *resource[K, E]) patch[Id sqlr.KeyTypes, IU Identified[Id], O any](
 	selectedPaths := selectPatchAssociationPaths(document, associationFields)
 	selectedPaths = append(selectedPaths, selectPatchAssociationPaths(document, associationTriggers)...)
 	selectedPaths = uniqueSortedStrings(selectedPaths)
-	if err = normalizePatchAssociationNulls(entity, document, associationFields, selectedPaths); err != nil {
+	if err = normalizePatchAssociationNulls(entity, r.schema, document, associationFields, selectedPaths); err != nil {
 		return zero, fmt.Errorf("failed to normalize patched associations: %w", err)
 	}
 
@@ -358,23 +358,20 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 
 	var entities []E
 	var err error
-	var queryErr error
 	if query != nil {
 		entities, err = query(ctx, tx, r.repository, input, plan)
 	} else {
-		entities, err = r.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
-			plan.ApplyBuilder(qb)
-			if scopeErr := plan.ApplyScope(qb); scopeErr != nil {
-				queryErr = scopeErr
-
-				return
-			}
-			plan.ApplyQueryModifiers(qb)
-			plan.ApplyPagination(qb)
-		})
-		if queryErr != nil {
-			return ListOutput[O]{}, queryErr
+		// Repository query options cannot return errors. Prepare the query first.
+		prepared := sqlr.NewQueryBuilderSelect()
+		plan.ApplyBuilder(prepared)
+		if err := plan.ApplyScope(prepared); err != nil {
+			return ListOutput[O]{}, err
 		}
+		plan.ApplyQueryModifiers(prepared)
+		plan.ApplyPagination(prepared)
+		entities, err = r.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
+			*qb = *prepared
+		})
 	}
 	if err != nil {
 		return ListOutput[O]{}, fmt.Errorf("failed to query entities: %w", err)
@@ -468,24 +465,21 @@ func (r *resource[K, E]) lookup[Id sqlr.KeyTypes](
 		return identity(ctx, tx, r.repository, id, scope, builder)
 	}
 
-	var queryErr error
-	entities, err := r.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
-		qb.Where(sqlc.Col(r.schema.TableName, r.schema.PrimaryKey.Name).Eq(id))
-		if scope != nil {
-			queryErr = scope(qb)
-			if queryErr != nil {
-				return
-			}
+	prepared := sqlr.NewQueryBuilderSelect()
+	prepared.Where(sqlc.Col(r.schema.TableName, r.schema.PrimaryKey.Name).Eq(id))
+	if scope != nil {
+		if err := scope(prepared); err != nil {
+			return nil, err
 		}
-		if builder != nil {
-			builder(qb)
-		}
-		// Do not limit joined lookups to one SQL row. SQLR needs all rows from
-		// has-many joins to hydrate the complete association.
-	})
-	if queryErr != nil {
-		return nil, queryErr
 	}
+	if builder != nil {
+		builder(prepared)
+	}
+	// Do not limit joined lookups to one SQL row. SQLR needs all rows from
+	// has-many joins to hydrate the complete association.
+	entities, err := r.repository.Query(tx, func(qb *sqlr.QueryBuilderSelect) {
+		*qb = *prepared
+	})
 	if err != nil {
 		return nil, err
 	}
