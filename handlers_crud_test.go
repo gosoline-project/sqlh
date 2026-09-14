@@ -72,7 +72,7 @@ func (i crudTestListInput) ValidatePagination() error {
 }
 
 func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -142,7 +142,7 @@ func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
 }
 
 func TestCrudHandlerListPaginationErrorRollsBack(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Rollback().Return(nil).Once()
 
@@ -166,7 +166,7 @@ func TestCrudHandlerListPaginationErrorRollsBack(t *testing.T) {
 }
 
 func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Rollback().Return(nil).Once()
 
@@ -202,7 +202,7 @@ func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
 }
 
 func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -242,7 +242,7 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -285,7 +285,7 @@ func TestCrudHandlerReadAppliesForceFiltersToIdentityLookup(t *testing.T) {
 }
 
 func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -352,7 +352,7 @@ func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *test
 }
 
 func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -407,7 +407,7 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 }
 
 func TestCrudHandlerDeleteReturnsNoContentWithoutOutput(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -417,7 +417,7 @@ func TestCrudHandlerDeleteReturnsNoContentWithoutOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(context.Context, sqlr.TTx, sqlr.CountingRepositoryTx[int, crudTestEntity], *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(context.Context, sqlr.TTx, sqlr.RepositoryTx[int, crudTestEntity], *InputById[int]) (*crudTestEntity, error) {
 		return nil, nil
 	}
 
@@ -430,7 +430,7 @@ func TestCrudHandlerDeleteReturnsNoContentWithoutOutput(t *testing.T) {
 }
 
 func TestCrudHandlerDeleteUsesConfiguredOutput(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -461,7 +461,7 @@ func TestCrudHandlerDeleteUsesConfiguredOutput(t *testing.T) {
 }
 
 func TestCrudHandlerDeleteOperationUsesConfiguredOutput(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
@@ -471,7 +471,7 @@ func TestCrudHandlerDeleteOperationUsesConfiguredOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.RepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
 		require.Same(t, repository, actualRepository)
 		require.Equal(t, 11, input.Id)
 
@@ -488,7 +488,7 @@ func TestCrudHandlerDeleteOperationUsesConfiguredOutput(t *testing.T) {
 }
 
 func TestCrudHandlerDeleteOutputErrorRollsBack(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Rollback().Return(nil).Once()
 
@@ -498,7 +498,7 @@ func TestCrudHandlerDeleteOutputErrorRollsBack(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := newCrudTestDefinition()
-	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actualRepository sqlr.RepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
 		require.Same(t, repository, actualRepository)
 
 		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil
@@ -550,7 +550,7 @@ func newTestTx(t *testing.T) *sqlcmocks.Tx {
 }
 
 func TestCrudHandlerCustomOperationsReceiveConfiguredRepository(t *testing.T) {
-	repository := sqlrmocks.NewCountingRepositoryTx[int, crudTestEntity](t)
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Times(6)
 
@@ -559,36 +559,36 @@ func TestCrudHandlerCustomOperationsReceiveConfiguredRepository(t *testing.T) {
 	schema, err := sqlr.ParseSchema[crudTestEntity]()
 	require.NoError(t, err)
 
-	assertRepository := func(actual sqlr.CountingRepositoryTx[int, crudTestEntity]) {
+	assertRepository := func(actual sqlr.RepositoryTx[int, crudTestEntity]) {
 		require.Same(t, repository, actual)
 	}
 	definition := newCrudTestDefinition()
-	definition.CreateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestCreateInput) (crudTestOutput, error) {
+	definition.CreateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestCreateInput) (crudTestOutput, error) {
 		assertRepository(actual)
 
 		return crudTestOutput{Id: 1}, nil
 	}
-	definition.ReadOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *InputById[int]) (crudTestOutput, error) {
+	definition.ReadOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], _ *InputById[int]) (crudTestOutput, error) {
 		assertRepository(actual)
 
 		return crudTestOutput{Id: 2}, nil
 	}
-	definition.UpdateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *crudTestUpdateInput) (crudTestOutput, error) {
+	definition.UpdateOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], _ *crudTestUpdateInput) (crudTestOutput, error) {
 		assertRepository(actual)
 
 		return crudTestOutput{Id: 3}, nil
 	}
-	definition.PatchOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *PatchInput[int]) (crudTestOutput, error) {
+	definition.PatchOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], _ *PatchInput[int]) (crudTestOutput, error) {
 		assertRepository(actual)
 
 		return crudTestOutput{Id: 4}, nil
 	}
-	definition.ListOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], _ *ListInput) (ListOutput[crudTestOutput], error) {
+	definition.ListOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], _ *ListInput) (ListOutput[crudTestOutput], error) {
 		assertRepository(actual)
 
 		return ListOutput[crudTestOutput]{Total: 5}, nil
 	}
-	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.CountingRepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
+	definition.DeleteOperation = func(_ context.Context, _ sqlr.TTx, actual sqlr.RepositoryTx[int, crudTestEntity], input *InputById[int]) (*crudTestEntity, error) {
 		assertRepository(actual)
 
 		return &crudTestEntity{Entity: sqlr.Entity[int]{Id: input.Id}}, nil

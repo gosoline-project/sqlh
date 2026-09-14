@@ -9,7 +9,7 @@ import (
 )
 
 type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
-	repository sqlr.CountingRepositoryTx[K, E]
+	repository sqlr.RepositoryTx[K, E]
 	runner     *TxRunner
 	schema     *sqlr.EntitySchema
 	tags       *entityBuilderTags
@@ -25,7 +25,7 @@ type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 }
 
 func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
-	repository sqlr.CountingRepositoryTx[K, E],
+	repository sqlr.RepositoryTx[K, E],
 	runner *TxRunner,
 	schema *sqlr.EntitySchema,
 ) (*resource[K, E], error) {

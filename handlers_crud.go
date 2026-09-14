@@ -307,7 +307,7 @@ func newCrudHandler[
 	IU Identified[Id],
 	LI ListInputSource,
 	O any,
-](repository sqlr.CountingRepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, Id, IC, IU, LI, O]) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
+](repository sqlr.RepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, Id, IC, IU, LI, O]) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
 	res, err := newResource(repository, runner, schema)
 	if err != nil {
 		return nil, err

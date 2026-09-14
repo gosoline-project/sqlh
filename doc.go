@@ -30,7 +30,7 @@
 // identity, query, count, and delete extension points. Its operation fields
 // replace complete default operations when an endpoint needs custom behavior.
 // Each operation override receives the active [sqlr.TTx] and the configured
-// [sqlr.CountingRepositoryTx]. A custom UpdateOperation does not replace the
+// [sqlr.RepositoryTx]. A custom UpdateOperation does not replace the
 // mapping used by the default PATCH operation. A custom PatchOperation replaces
 // the complete default PATCH pipeline.
 //
