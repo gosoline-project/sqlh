@@ -94,6 +94,9 @@ func (i ListInput) ValidatePagination() error {
 	if i.Page.Offset < 0 {
 		return validation.NewError(fmt.Errorf("offset must not be negative"))
 	}
+	if i.Page.Offset > 0 && i.Page.Limit == 0 {
+		return validation.NewError(fmt.Errorf("offset requires a positive limit"))
+	}
 
 	return nil
 }

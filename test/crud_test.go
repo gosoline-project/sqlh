@@ -373,6 +373,84 @@ func (s *CrudIntegrationTestSuite) TestPatchPostNullClearsSuppliedTags(app suite
 	return nil
 }
 
+func (s *CrudIntegrationTestSuite) TestPatchMutationPreloadPostNullClearsNullableAuthor(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output MutationPreloadPostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"author": nil,
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/preload-post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Zero(output.AuthorId)
+
+	stored, err := s.readMutationPreloadPost(1)
+	if err != nil {
+		return err
+	}
+
+	s.Nil(stored.AuthorId)
+	s.Zero(stored.Author)
+
+	response, err = client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{"title": "Author stays null"}).
+		Execute(http.MethodPatch, "/v1/preload-post/1")
+	if err != nil {
+		return err
+	}
+	s.Equal(http.StatusOK, response.StatusCode())
+
+	stored, err = s.readMutationPreloadPost(1)
+	if err != nil {
+		return err
+	}
+	s.Nil(stored.AuthorId)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestPatchMutationPreloadPostOmittedAuthorPreservesNullableForeignKey(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output MutationPreloadPostOutput
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]any{
+			"title": "Omitted author patch",
+		}).
+		SetResult(&output).
+		Execute(http.MethodPatch, "/v1/preload-post/1")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal(int64(1), output.AuthorId)
+
+	stored, err := s.readMutationPreloadPost(1)
+	if err != nil {
+		return err
+	}
+
+	if stored.AuthorId == nil {
+		return errors.New("expected omitted author patch to preserve author_id")
+	}
+	s.Equal(int64(1), *stored.AuthorId)
+	s.Equal(int64(1), stored.Author.Id)
+
+	return nil
+}
+
 func (s *CrudIntegrationTestSuite) TestDeletePost(app suite.AppUnderTest, client *resty.Client) error {
 	defer app.WaitDone()
 	defer app.Stop()
@@ -458,11 +536,12 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 	defer app.WaitDone()
 	defer app.Stop()
 
+	authorId := int64(2)
 	var output MutationPreloadPostOutput
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(MutationPreloadPostUpdateInput{
-			AuthorId: 2,
+			AuthorId: &authorId,
 			Title:    "Updated Preload Tags",
 			Status:   "published",
 			Tags: []MutationPreloadPostInputTag{
@@ -517,6 +596,20 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 
 func (s *CrudIntegrationTestSuite) readPost(id int64) (*Post, error) {
 	repo, err := sqlr.NewRepository[int64, Post](s.ctx, s.Env().Config(), s.Env().Logger(), "default")
+	if err != nil {
+		return nil, err
+	}
+
+	defer repo.Close() //nolint:errcheck // test helper best effort cleanup
+
+	return repo.Read(s.ctx, id, func(qb *sqlr.QueryBuilderRead) {
+		qb.Preload("Author")
+		qb.Preload("Tags")
+	})
+}
+
+func (s *CrudIntegrationTestSuite) readMutationPreloadPost(id int64) (*MutationPreloadPost, error) {
+	repo, err := sqlr.NewRepository[int64, MutationPreloadPost](s.ctx, s.Env().Config(), s.Env().Logger(), "default")
 	if err != nil {
 		return nil, err
 	}

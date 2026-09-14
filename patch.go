@@ -353,24 +353,87 @@ func selectPatchAssociationPaths(document PatchDocument, fields map[string]strin
 	return selected
 }
 
-func normalizePatchAssociationNulls[E any](entity *E, document PatchDocument, fields map[string]string, selected []string) error {
+func normalizePatchAssociationNulls[E any](entity *E, schema *sqlr.EntitySchema, document PatchDocument, fields map[string]string, selected []string) error {
 	if entity == nil {
 		return fmt.Errorf("patch entity is nil")
+	}
+	if schema == nil {
+		return fmt.Errorf("patch entity schema is nil")
 	}
 
 	root := reflect.ValueOf(entity).Elem()
 	for _, relationPath := range selected {
 		patchPath, ok := patchPathForRelation(fields, relationPath)
-		if !ok || (!document.IsNull(patchPath) && !document.isEmptyArray(patchPath)) {
+		if !ok {
 			continue
 		}
 
-		if err := clearPatchRelation(root, relationPath); err != nil {
+		isNull := document.IsNull(patchPath)
+		if !isNull && !document.isEmptyArray(patchPath) {
+			continue
+		}
+
+		if err := clearPatchRelation(root, schema, relationPath, isNull); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func clearPatchRelation(root reflect.Value, schema *sqlr.EntitySchema, relationPath string, clearBelongsToForeignKey bool) error {
+	segments := strings.Split(relationPath, ".")
+
+	return clearPatchRelationValue(root, schema, segments, relationPath, clearBelongsToForeignKey)
+}
+
+func clearPatchRelationValue(value reflect.Value, schema *sqlr.EntitySchema, segments []string, relationPath string, clearBelongsToForeignKey bool) error {
+	value = unwrapPatchValue(value)
+	if !value.IsValid() {
+		return nil
+	}
+
+	switch value.Kind() {
+	case reflect.Slice, reflect.Array:
+		for index := range value.Len() {
+			if err := clearPatchRelationValue(value.Index(index), schema, segments, relationPath, clearBelongsToForeignKey); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	case reflect.Struct:
+	default:
+		return nil
+	}
+
+	segment := segments[0]
+	rel, ok := schema.Relationships[segment]
+	if !ok {
+		return fmt.Errorf("patch association %q is not present in the entity schema", relationPath)
+	}
+
+	field := value.FieldByIndex(rel.FieldIndex)
+	if len(segments) > 1 {
+		nestedSchema, err := rel.ResolveRelatedSchema()
+		if err != nil {
+			return fmt.Errorf("failed to resolve patch association %q schema: %w", relationPath, err)
+		}
+
+		return clearPatchRelationValue(field, nestedSchema, segments[1:], relationPath, clearBelongsToForeignKey)
+	}
+
+	if clearBelongsToForeignKey && rel.Type == sqlr.BelongsTo {
+		fkColumn, ok := schema.ColumnByName(rel.ForeignKey)
+		if !ok {
+			return fmt.Errorf("patch association %q belongs-to foreign key column %q is not present in the entity schema", relationPath, rel.ForeignKey)
+		}
+		if err := clearPatchField(value.FieldByIndex(fkColumn.FieldIndex), relationPath); err != nil {
+			return err
+		}
+	}
+
+	return clearPatchField(field, relationPath)
 }
 
 func patchPathForRelation(fields map[string]string, relationPath string) (string, bool) {
@@ -383,40 +446,31 @@ func patchPathForRelation(fields map[string]string, relationPath string) (string
 	return "", false
 }
 
-func clearPatchRelation(root reflect.Value, relationPath string) error {
-	current := root
-	segments := strings.Split(relationPath, ".")
-	for index, segment := range segments {
-		for current.Kind() == reflect.Pointer {
-			if current.IsNil() {
-				return nil
-			}
-			current = current.Elem()
-		}
-		if current.Kind() != reflect.Struct {
-			return nil
-		}
+func clearPatchField(field reflect.Value, relationPath string) error {
+	if !field.IsValid() {
+		return fmt.Errorf("patch association %q field is not present on the entity", relationPath)
+	}
+	if !field.CanSet() {
+		return fmt.Errorf("patch association %q cannot be updated", relationPath)
+	}
 
-		field := current.FieldByName(segment)
-		if !field.IsValid() {
-			return fmt.Errorf("patch association %q is not present on the entity", relationPath)
-		}
-		if index == len(segments)-1 {
-			if !field.CanSet() {
-				return fmt.Errorf("patch association %q cannot be updated", relationPath)
-			}
-
-			if field.Kind() == reflect.Slice {
-				field.Set(reflect.MakeSlice(field.Type(), 0, 0))
-			} else {
-				field.Set(reflect.Zero(field.Type()))
-			}
-
-			return nil
-		}
-
-		current = field
+	if field.Kind() == reflect.Slice {
+		field.Set(reflect.MakeSlice(field.Type(), 0, 0))
+	} else {
+		field.Set(reflect.Zero(field.Type()))
 	}
 
 	return nil
+}
+
+func unwrapPatchValue(value reflect.Value) reflect.Value {
+	for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+		if value.IsNil() {
+			return reflect.Value{}
+		}
+
+		value = value.Elem()
+	}
+
+	return value
 }

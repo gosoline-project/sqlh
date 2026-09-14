@@ -37,6 +37,33 @@ type patchTestAssociationEntity struct {
 	Other []patchTestAssociationEntity `db:"-" sqlr:"many2many:patch_test_other" sqlh:"sync:update"`
 }
 
+type patchTestBelongsToInput struct {
+	InputById[int]
+	Author patchTestBelongsToAuthorInput `json:"author"`
+}
+
+type patchTestBelongsToAuthorInput struct {
+	Profile patchTestBelongsToProfileInput `json:"profile"`
+}
+
+type patchTestBelongsToProfileInput struct{}
+
+type patchTestBelongsToEntity struct {
+	sqlr.Entity[int]
+	AuthorId *int                     `db:"author_id"`
+	Author   patchTestBelongsToAuthor `db:"-" sqlr:"belongsTo:author_id"`
+}
+
+type patchTestBelongsToAuthor struct {
+	sqlr.Entity[int]
+	ProfileId *int                      `db:"profile_id"`
+	Profile   patchTestBelongsToProfile `db:"-" sqlr:"belongsTo:profile_id"`
+}
+
+type patchTestBelongsToProfile struct {
+	sqlr.Entity[int]
+}
+
 func TestNewPatchDocumentRejectsNonObjects(t *testing.T) {
 	for _, input := range []string{"", "null", "[]", `"value"`} {
 		t.Run(input, func(t *testing.T) {
@@ -97,6 +124,87 @@ func TestSelectPatchAssociationPathsUsesOnlySuppliedSyncPaths(t *testing.T) {
 	require.Equal(t, []string{"Tags"}, selectPatchAssociationPaths(document, fields))
 }
 
+func TestNormalizePatchAssociationNullsClearsBelongsToForeignKey(t *testing.T) {
+	document, err := NewPatchDocument([]byte(`{"author":null}`))
+	require.NoError(t, err)
+
+	fields, err := buildPatchAssociationFields[patchTestBelongsToInput]([]string{"Author"}, nil)
+	require.NoError(t, err)
+
+	schema, err := sqlr.ParseSchema[patchTestBelongsToEntity]()
+	require.NoError(t, err)
+
+	authorId := 7
+	entity := &patchTestBelongsToEntity{
+		AuthorId: &authorId,
+		Author: patchTestBelongsToAuthor{
+			Entity: sqlr.Entity[int]{Id: authorId},
+		},
+	}
+	selected := selectPatchAssociationPaths(document, fields)
+
+	require.Equal(t, []string{"Author"}, selected)
+	require.NoError(t, normalizePatchAssociationNulls(entity, schema, document, fields, selected))
+	require.Nil(t, entity.AuthorId)
+	require.Zero(t, entity.Author)
+}
+
+func TestNormalizePatchAssociationNullsClearsNestedBelongsToForeignKey(t *testing.T) {
+	document, err := NewPatchDocument([]byte(`{"author":{"profile":null}}`))
+	require.NoError(t, err)
+
+	fields, err := buildPatchAssociationFields[patchTestBelongsToInput]([]string{"Author.Profile"}, nil)
+	require.NoError(t, err)
+
+	schema, err := sqlr.ParseSchema[patchTestBelongsToEntity]()
+	require.NoError(t, err)
+
+	authorId := 7
+	profileId := 11
+	entity := &patchTestBelongsToEntity{
+		AuthorId: &authorId,
+		Author: patchTestBelongsToAuthor{
+			Entity:    sqlr.Entity[int]{Id: authorId},
+			ProfileId: &profileId,
+			Profile: patchTestBelongsToProfile{
+				Entity: sqlr.Entity[int]{Id: profileId},
+			},
+		},
+	}
+	selected := selectPatchAssociationPaths(document, fields)
+
+	require.Equal(t, []string{"Author.Profile"}, selected)
+	require.NoError(t, normalizePatchAssociationNulls(entity, schema, document, fields, selected))
+	require.Equal(t, &authorId, entity.AuthorId)
+	require.Nil(t, entity.Author.ProfileId)
+	require.Zero(t, entity.Author.Profile)
+}
+
+func TestNormalizePatchAssociationNullsLeavesOmittedBelongsToUntouched(t *testing.T) {
+	document, err := NewPatchDocument([]byte(`{}`))
+	require.NoError(t, err)
+
+	fields, err := buildPatchAssociationFields[patchTestBelongsToInput]([]string{"Author"}, nil)
+	require.NoError(t, err)
+
+	schema, err := sqlr.ParseSchema[patchTestBelongsToEntity]()
+	require.NoError(t, err)
+
+	authorId := 7
+	entity := &patchTestBelongsToEntity{
+		AuthorId: &authorId,
+		Author: patchTestBelongsToAuthor{
+			Entity: sqlr.Entity[int]{Id: authorId},
+		},
+	}
+	selected := selectPatchAssociationPaths(document, fields)
+
+	require.Empty(t, selected)
+	require.NoError(t, normalizePatchAssociationNulls(entity, schema, document, fields, selected))
+	require.Same(t, &authorId, entity.AuthorId)
+	require.Equal(t, authorId, entity.Author.Id)
+}
+
 func TestNormalizePatchAssociationNullsCreatesEmptySlice(t *testing.T) {
 	document, err := NewPatchDocument([]byte(`{"tags":null}`))
 	require.NoError(t, err)
@@ -104,10 +212,13 @@ func TestNormalizePatchAssociationNullsCreatesEmptySlice(t *testing.T) {
 	fields, err := buildPatchAssociationFields[patchTestAssociationInput]([]string{"Tags"}, nil)
 	require.NoError(t, err)
 
+	schema, err := sqlr.ParseSchema[patchTestAssociationEntity]()
+	require.NoError(t, err)
+
 	entity := &patchTestAssociationEntity{
 		Tags: []patchTestAssociationEntity{{Entity: sqlr.Entity[int]{Id: 1}}},
 	}
-	require.NoError(t, normalizePatchAssociationNulls(entity, document, fields, []string{"Tags"}))
+	require.NoError(t, normalizePatchAssociationNulls(entity, schema, document, fields, []string{"Tags"}))
 	require.NotNil(t, entity.Tags)
 	require.Empty(t, entity.Tags)
 }
@@ -119,10 +230,13 @@ func TestNormalizePatchAssociationEmptyArrayCreatesEmptySlice(t *testing.T) {
 	fields, err := buildPatchAssociationFields[patchTestAssociationInput]([]string{"Tags"}, nil)
 	require.NoError(t, err)
 
+	schema, err := sqlr.ParseSchema[patchTestAssociationEntity]()
+	require.NoError(t, err)
+
 	entity := &patchTestAssociationEntity{
 		Tags: []patchTestAssociationEntity{{Entity: sqlr.Entity[int]{Id: 1}}},
 	}
-	require.NoError(t, normalizePatchAssociationNulls(entity, document, fields, []string{"Tags"}))
+	require.NoError(t, normalizePatchAssociationNulls(entity, schema, document, fields, []string{"Tags"}))
 	require.NotNil(t, entity.Tags)
 	require.Empty(t, entity.Tags)
 }

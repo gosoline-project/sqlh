@@ -48,11 +48,14 @@
 // use the same user filters, force filters, and soft-delete scope. Custom list
 // inputs must implement [ListInputSource], including ApplyQueryModifiers. Use a
 // no-op implementation when the input has no row-only modifiers.
+// A positive offset requires a positive limit.
 //
 // Custom Query and Count callbacks must call QueryPlan.ApplyBuilder and then
 // QueryPlan.ApplyScope. A custom Query callback must then call
 // QueryPlan.ApplyQueryModifiers and QueryPlan.ApplyPagination, in that order.
 // A custom Count callback must not call ApplyQueryModifiers or ApplyPagination.
+// Return any ApplyScope error before calling the repository. SQLR query-option
+// callbacks cannot abort query execution.
 // Applications can embed or replace the list input when they need
 // domain-specific query behavior.
 //
@@ -73,7 +76,8 @@
 // input, so it can distinguish an omitted field from an explicitly supplied
 // zero value or null. JSON Merge Patch replaces arrays as complete values.
 // For direct association fields, null and an empty array both clear the
-// association.
+// association. A null belongs-to association also clears its owning foreign-key
+// field. To store NULL, use a nullable field and database column.
 //
 // SQLH derives direct association mappings from update-input JSON paths and
 // entity relation names. Only relations configured with sqlh sync:update are
