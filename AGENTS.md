@@ -46,7 +46,7 @@ files` for `./test`. Use the tagged command above to run it.
 
 ## API conventions
 - Keep public handlers typed as `func(context.Context, *Input) (Output, error)`.
-- `*Operation` fields replace a complete default operation. Each override receives the active transaction and the configured counting repository.
+- `*Operation` fields replace a complete default operation. Each override receives the active transaction and the configured repository.
 - `DeleteOperation` returns the deleted entity. `Delete` maps it through `DeleteOutput`; `DeleteNoContent` skips mapping and returns 204.
 - `DeleteOutput` has the same signature as `Output`, so callers can assign `definition.DeleteOutput = definition.Output`.
 - Force filters are server-owned restrictions. SQLH applies them; custom list inputs must not duplicate them in `ApplyFilters`.

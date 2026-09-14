@@ -13,6 +13,6 @@ type TxOperation[I, O any] func(context.Context, sqlr.TTx, *I) (O, error)
 type CrudOperation[K sqlr.KeyTypes, E sqlr.Entitier[K], I, O any] func(
 	context.Context,
 	sqlr.TTx,
-	sqlr.CountingRepositoryTx[K, E],
+	sqlr.RepositoryTx[K, E],
 	*I,
 ) (O, error)
