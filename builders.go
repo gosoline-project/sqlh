@@ -78,6 +78,9 @@ func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuil
 	}
 }
 
+// PATCH starts with a complete update input. Omit automatic relations that the
+// request did not select for SQLH synchronization, or SQLR could treat an
+// omitted value as a replacement.
 func builderPatchWriteFromTags(preloadPaths []string, syncPaths []string, autoSyncPaths []string) func(qb *sqlr.QueryBuilderUpdate) {
 	if len(preloadPaths) == 0 && len(syncPaths) == 0 && len(autoSyncPaths) == 0 {
 		return nil
@@ -92,6 +95,8 @@ func builderPatchWriteFromTags(preloadPaths []string, syncPaths []string, autoSy
 			qb.Preload(path)
 		}
 		for _, path := range autoPaths {
+			// Match SQLR's ancestor and descendant path rules so an explicit nested
+			// selection is not hidden by an overlapping automatic path.
 			if patchAssociationPathSelected(path, paths) {
 				continue
 			}

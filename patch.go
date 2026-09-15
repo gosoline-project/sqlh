@@ -146,6 +146,11 @@ func (d PatchDocument) MergeInto(completeInput any) error {
 	return nil
 }
 
+// json.Unmarshal does not clear map entries or struct fields that are absent
+// from its input. Reset the target first so merge-patch nulls cannot leave
+// values that the merged document removed. Preserve fields excluded from JSON,
+// such as request identity and force filters, because they belong to request
+// context rather than the patch body.
 func resetPatchInput(value reflect.Value) {
 	if !value.IsValid() {
 		return
@@ -349,6 +354,8 @@ func hasRelationPathValue(fields map[string]string, relationPath string) bool {
 	return false
 }
 
+// Select from the original document, not the merged input. MergeInto fills
+// omitted fields, but an omitted association must not trigger synchronization.
 func selectPatchAssociationPaths(document PatchDocument, fields map[string]string) []string {
 	selected := make([]string, 0)
 	for patchPath, relationPath := range fields {
@@ -362,6 +369,10 @@ func selectPatchAssociationPaths(document PatchDocument, fields map[string]strin
 	return selected
 }
 
+// The update mapper receives only the merged value. It cannot reliably
+// distinguish an explicit null or empty-array clear from an omitted association.
+// Restore those markers from the original document before SQLR persists the
+// entity.
 func normalizePatchAssociationNulls[E any](entity *E, schema *sqlr.EntitySchema, document PatchDocument, fields map[string]string, selected []string) error {
 	if entity == nil {
 		return fmt.Errorf("patch entity is nil")
