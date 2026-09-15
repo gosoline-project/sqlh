@@ -228,6 +228,7 @@ type CrudHandler[
 	LI ListInputSource,
 	O any,
 ] struct {
+	runner   *TxRunner
 	resource *resource[K, E]
 
 	patchOperation  TxOperation[PatchInput[Id], O]
@@ -308,7 +309,11 @@ func newCrudHandler[
 	LI ListInputSource,
 	O any,
 ](repository sqlr.RepositoryTx[K, E], runner *TxRunner, schema *sqlr.EntitySchema, definition CrudDefinition[K, E, Id, IC, IU, LI, O]) (*CrudHandler[K, E, Id, IC, IU, LI, O], error) {
-	res, err := newResource(repository, runner, schema)
+	if runner == nil {
+		return nil, fmt.Errorf("transaction runner is required")
+	}
+
+	res, err := newResource(repository, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +354,7 @@ func newCrudHandler[
 	}
 
 	return &CrudHandler[K, E, Id, IC, IU, LI, O]{
+		runner:          runner,
 		resource:        res,
 		createOperation: createOperation,
 		readOperation:   readOperation,
@@ -363,31 +369,31 @@ func newCrudHandler[
 // Create executes the create operation in a transaction and returns the typed
 // output only after the transaction commits.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Create(ctx context.Context, input *IC) (O, error) {
-	return h.resource.runner.RunValue(ctx, input, h.createOperation)
+	return h.runner.RunValue(ctx, input, h.createOperation)
 }
 
 // Read executes a scoped identity lookup in a transaction and returns the
 // typed output only after the transaction commits.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Read(ctx context.Context, input *InputById[Id]) (O, error) {
-	return h.resource.runner.RunValue(ctx, input, h.readOperation)
+	return h.runner.RunValue(ctx, input, h.readOperation)
 }
 
 // Update performs a scoped identity lookup, applies the update mapper, and
 // persists the entity in one transaction.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Update(ctx context.Context, input *IU) (O, error) {
-	return h.resource.runner.RunValue(ctx, input, h.updateOperation)
+	return h.runner.RunValue(ctx, input, h.updateOperation)
 }
 
 // Patch applies a JSON Merge Patch in a transaction and returns the typed
 // output only after the transaction commits.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Patch(ctx context.Context, input *PatchInput[Id]) (O, error) {
-	return h.resource.runner.RunValue(ctx, input, h.patchOperation)
+	return h.runner.RunValue(ctx, input, h.patchOperation)
 }
 
 // List queries and counts entities using one shared filter scope, then maps the
 // results to the typed list output.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) List(ctx context.Context, input *LI) (ListOutput[O], error) {
-	return h.resource.runner.RunValue(ctx, input, h.listOperation)
+	return h.runner.RunValue(ctx, input, h.listOperation)
 }
 
 // Delete performs the configured delete operation and maps its entity through
@@ -398,7 +404,7 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input
 		return zero, fmt.Errorf("CRUD delete output mapper is required")
 	}
 
-	return h.resource.runner.RunValue(ctx, input, func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
+	return h.runner.RunValue(ctx, input, func(ctx context.Context, tx sqlr.TTx, input *InputById[Id]) (O, error) {
 		entity, err := h.deleteOperation(ctx, tx, input)
 		if err != nil {
 			return zero, err
@@ -419,7 +425,7 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Delete(ctx context.Context, input
 // DeleteNoContent performs the configured delete operation and returns 204 No
 // Content without mapping an output.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteNoContent(ctx context.Context, input *InputById[Id]) (httpserver.Response, error) {
-	if _, err := h.resource.runner.RunValue(ctx, input, h.deleteOperation); err != nil {
+	if _, err := h.runner.RunValue(ctx, input, h.deleteOperation); err != nil {
 		return nil, err
 	}
 

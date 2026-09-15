@@ -10,7 +10,6 @@ import (
 
 type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 	repository sqlr.RepositoryTx[K, E]
-	runner     *TxRunner
 	schema     *sqlr.EntitySchema
 	tags       *entityBuilderTags
 
@@ -26,14 +25,10 @@ type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 
 func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	repository sqlr.RepositoryTx[K, E],
-	runner *TxRunner,
 	schema *sqlr.EntitySchema,
 ) (*resource[K, E], error) {
 	if repository == nil {
 		return nil, fmt.Errorf("transaction repository is required")
-	}
-	if runner == nil {
-		return nil, fmt.Errorf("transaction runner is required")
 	}
 	if schema == nil || schema.PrimaryKey == nil {
 		return nil, fmt.Errorf("entity schema with primary key is required")
@@ -50,7 +45,6 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 
 	return &resource[K, E]{
 		repository:         repository,
-		runner:             runner,
 		schema:             schema,
 		tags:               tags,
 		builderCreate:      builderCreateFromTags(tags),
