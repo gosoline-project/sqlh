@@ -8,6 +8,13 @@ import (
 	"github.com/gosoline-project/sqlr"
 )
 
+// resource binds a repository and entity policy into transaction-aware CRUD
+// operations. It keeps persistence logic separate from HTTP adaptation and
+// transaction execution, which belong to CrudHandler and TxRunner.
+//
+// One resource serves the handler's lifetime. Its operation closures reuse the
+// parsed schema and tag-derived builders, but receive input and a transaction
+// for each request. It owns no request state and does not close the SQL client.
 type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 	repository sqlr.RepositoryTx[K, E]
 	schema     *sqlr.EntitySchema
@@ -322,6 +329,9 @@ func (r *resource[K, E]) buildListOperation[LI ListInputSource, O any](
 	}, nil
 }
 
+// Query and count share one plan for entity and request scope. The default
+// count applies only the builder and scope, so Total remains independent of the
+// page. Custom callbacks receive the same plan and must preserve this split.
 func (r *resource[K, E]) list[LI ListInputSource, O any](
 	ctx context.Context,
 	tx sqlr.TTx,
