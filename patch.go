@@ -18,7 +18,8 @@ import (
 // omitted fields from fields explicitly supplied as null.
 type PatchInput[K sqlr.KeyTypes] struct {
 	InputById[K]
-	document PatchDocument
+	// Document is the parsed JSON Merge Patch body supplied with the request.
+	Document PatchDocument
 }
 
 // UnmarshalJSON stores the complete JSON Merge Patch document. URI binding is
@@ -29,14 +30,9 @@ func (i *PatchInput[K]) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	i.document = document
+	i.Document = document
 
 	return nil
-}
-
-// Document returns the JSON Merge Patch document supplied with the request.
-func (i PatchInput[K]) Document() PatchDocument {
-	return i.document
 }
 
 // PatchDocument is an immutable JSON Merge Patch object. It provides presence
@@ -242,7 +238,19 @@ func buildPatchAssociationFields[IU any](syncPaths []string, overrides map[strin
 			continue
 		}
 
-		patchPath := patchJSONPath[IU](relationPath)
+		patchPath, err := patchJSONPath[IU](relationPath)
+		if err != nil {
+			return nil, err
+		}
+		if existingRelationPath, ok := fields[patchPath]; ok && existingRelationPath != relationPath {
+			return nil, fmt.Errorf(
+				"patch associations %q and %q derive to the same JSON path %q",
+				existingRelationPath,
+				relationPath,
+				patchPath,
+			)
+		}
+
 		fields[patchPath] = relationPath
 	}
 
@@ -262,36 +270,40 @@ func buildPatchAssociationTriggers(syncPaths []string, triggers map[string]strin
 	return result, nil
 }
 
-func patchJSONPath[IU any](relationPath string) string {
+func patchJSONPath[IU any](relationPath string) (string, error) {
 	segments := strings.Split(relationPath, ".")
 	result := make([]string, 0, len(segments))
 	t := patchType[IU]()
 
 	for _, segment := range segments {
-		jsonName, nestedType := patchJSONSegment(t, segment)
+		jsonName, nestedType, ok := patchJSONSegment(t, segment)
+		if !ok {
+			return "", fmt.Errorf("patch association %q has no matching update input field for segment %q", relationPath, segment)
+		}
+
 		result = append(result, jsonName)
 		t = nestedType
 	}
 
-	return strings.Join(result, ".")
+	return strings.Join(result, "."), nil
 }
 
-func patchJSONSegment(t reflect.Type, segment string) (string, reflect.Type) {
-	jsonName := lowerCamel(segment)
+func patchJSONSegment(t reflect.Type, segment string) (string, reflect.Type, bool) {
 	if t == nil || t.Kind() != reflect.Struct {
-		return jsonName, nil
+		return "", nil, false
 	}
 
 	field, ok := t.FieldByName(segment)
 	if !ok {
-		return jsonName, nil
+		return "", nil, false
 	}
 
-	if name, valid := jsonFieldName(field); valid {
-		jsonName = name
+	jsonName, valid := jsonFieldName(field)
+	if !valid {
+		return "", nil, false
 	}
 
-	return jsonName, patchNestedType(field.Type)
+	return jsonName, patchNestedType(field.Type), true
 }
 
 func patchType[T any]() reflect.Type {

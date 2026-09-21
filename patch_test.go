@@ -30,6 +30,11 @@ type patchTestAssociationInput struct {
 	Tags  []int `json:"tags"`
 	Other []int `json:"other"`
 }
+type patchTestDuplicateAssociationInput struct {
+	InputById[int]
+	Tags  []int `json:"items"`
+	Items []int
+}
 
 type patchTestAssociationEntity struct {
 	sqlr.Entity[int]
@@ -177,11 +182,31 @@ func TestPatchDocumentTracksPresenceAndNull(t *testing.T) {
 }
 
 func TestPatchInputStoresDocumentAndRetainsURIIdentity(t *testing.T) {
-	input := PatchInput[int]{InputById: InputById[int]{Id: 9}}
+	document, err := NewPatchDocument([]byte(`{"name":"updated"}`))
+	require.NoError(t, err)
 
-	require.NoError(t, json.Unmarshal([]byte(`{"name":"updated"}`), &input))
+	input := PatchInput[int]{
+		InputById: InputById[int]{Id: 9},
+		Document:  document,
+	}
+
 	require.Equal(t, 9, input.GetId())
-	require.True(t, input.Document().Has("name"))
+	require.True(t, input.Document.Has("name"))
+
+	require.NoError(t, json.Unmarshal([]byte(`{"name":"replaced"}`), &input))
+	require.True(t, input.Document.Has("name"))
+}
+
+func TestBuildPatchAssociationFieldsRejectsMissingUpdateField(t *testing.T) {
+	_, err := buildPatchAssociationFields[patchTestAssociationInput]([]string{"Missing"}, nil)
+
+	require.EqualError(t, err, `patch association "Missing" has no matching update input field for segment "Missing"`)
+}
+
+func TestBuildPatchAssociationFieldsRejectsDuplicateDerivedJSONPath(t *testing.T) {
+	_, err := buildPatchAssociationFields[patchTestDuplicateAssociationInput]([]string{"Tags", "Items"}, nil)
+
+	require.EqualError(t, err, `patch associations "Tags" and "Items" derive to the same JSON path "items"`)
 }
 
 func TestSelectPatchAssociationPathsUsesOnlySuppliedSyncPaths(t *testing.T) {

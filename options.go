@@ -45,6 +45,12 @@ func WithRepositoryTxFactory[K sqlr.KeyTypes, E sqlr.Entitier[K]](factory Reposi
 
 // WithRepositorySettings configures SQLR repository settings, such as prepared
 // statement caching.
+//
+// When prepared statements are enabled, call CrudHandler.Close exactly once
+// before application shutdown. A handler created through WithCrudHandlers is
+// not exposed to the caller and cannot be closed automatically by the pinned
+// httpserver version; use NewCrudHandler for manual route registration when
+// explicit repository cleanup is required.
 func WithRepositorySettings[K sqlr.KeyTypes, E sqlr.Entitier[K]](settings sqlr.Settings) Option[K, E] {
 	return func(opts *handlerOptions[K, E]) {
 		opts.repositorySettings = settings

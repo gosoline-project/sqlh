@@ -34,6 +34,20 @@
 // mapping used by the default PATCH operation. A custom PatchOperation replaces
 // the complete default PATCH pipeline.
 //
+// # Handler lifecycle
+//
+// [NewCrudHandler] exposes the constructed [CrudHandler] through its factory,
+// so applications that enable repository prepared statements can retain the
+// handler and call [CrudHandler.Close] exactly once during shutdown.
+//
+// [WithCrudHandlers] constructs the handler inside [httpserver.With]. The
+// pinned httpserver version does not expose a shutdown hook for handlers
+// registered this way, so the handler and its repository are not reachable for
+// automatic cleanup. Applications that enable prepared statements must use
+// [NewCrudHandler] for manual route registration and call [CrudHandler.Close]
+// exactly once. Without that manual path, prepared statements remain allocated
+// for the process lifetime.
+//
 // # Force filters and lists
 //
 // [ForceFilters] carries server-owned query restrictions. Applications can
