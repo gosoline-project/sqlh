@@ -20,7 +20,7 @@ func composeBuilders[QB any](builders ...func(qb QB)) func(qb QB) {
 
 func builderCreateFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderCreate) {
 	if tags == nil || (len(tags.createPreloadPaths) == 0 && len(tags.createSyncPaths) == 0) {
-		return nil
+		return func(*sqlr.QueryBuilderCreate) {}
 	}
 
 	preloadPaths := append([]string(nil), tags.createPreloadPaths...)
@@ -37,7 +37,7 @@ func builderCreateFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderCr
 
 func builderQueryFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
 	if tags == nil || len(tags.queryPreloadPaths) == 0 {
-		return nil
+		return func(*sqlr.QueryBuilderSelect) {}
 	}
 
 	paths := append([]string(nil), tags.queryPreloadPaths...)
@@ -51,7 +51,7 @@ func builderQueryFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSel
 
 func builderDeleteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderDelete) {
 	if tags == nil || len(tags.deleteSyncPaths) == 0 {
-		return nil
+		return func(*sqlr.QueryBuilderDelete) {}
 	}
 
 	paths := append([]string(nil), tags.deleteSyncPaths...)
@@ -63,7 +63,7 @@ func builderDeleteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderDe
 
 func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderUpdate) {
 	if tags == nil || (len(tags.updateSyncPaths) == 0 && len(tags.updatePreloadPaths) == 0) {
-		return nil
+		return func(*sqlr.QueryBuilderUpdate) {}
 	}
 
 	preloadPaths := append([]string(nil), tags.updatePreloadPaths...)
@@ -83,7 +83,7 @@ func builderUpdateWriteFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuil
 // omitted value as a replacement.
 func builderPatchWriteFromTags(preloadPaths []string, syncPaths []string, autoSyncPaths []string) func(qb *sqlr.QueryBuilderUpdate) {
 	if len(preloadPaths) == 0 && len(syncPaths) == 0 && len(autoSyncPaths) == 0 {
-		return nil
+		return func(*sqlr.QueryBuilderUpdate) {}
 	}
 
 	preloads := append([]string(nil), preloadPaths...)
@@ -121,7 +121,7 @@ func patchAssociationPathSelected(path string, selectedPaths []string) bool {
 
 func builderLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
 	if tags == nil || len(tags.readPreloadPaths) == 0 {
-		return nil
+		return func(*sqlr.QueryBuilderSelect) {}
 	}
 
 	paths := append([]string(nil), tags.readPreloadPaths...)
@@ -141,7 +141,7 @@ func builderForUpdate(qb *sqlr.QueryBuilderSelect) {
 // lookup performed before an update.
 func builderUpdateLookupFromTags(tags *entityBuilderTags) func(qb *sqlr.QueryBuilderSelect) {
 	if tags == nil || len(tags.updatePreloadPaths) == 0 {
-		return nil
+		return func(*sqlr.QueryBuilderSelect) {}
 	}
 
 	paths := append([]string(nil), tags.updatePreloadPaths...)
