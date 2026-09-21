@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlc"
@@ -313,6 +314,14 @@ func newCrudHandler[
 		return nil, fmt.Errorf("transaction runner is required")
 	}
 
+	if definition.Identity == nil && reflect.TypeFor[Id]() != reflect.TypeFor[K]() {
+		return nil, fmt.Errorf(
+			"CRUD identity lookup is required when input ID type %s differs from entity key type %s",
+			reflect.TypeFor[Id](),
+			reflect.TypeFor[K](),
+		)
+	}
+
 	res, err := newResource(repository, schema)
 	if err != nil {
 		return nil, err
@@ -434,6 +443,12 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteNoContent(ctx context.Conte
 
 // Close releases resources held by the SQLR repository, including prepared
 // statements when repository prepared statements are enabled.
+//
+// Call Close exactly once for a handler created with NewCrudHandler. Handlers
+// created through WithCrudHandlers are constructed inside httpserver.With and
+// the pinned httpserver version does not expose a handler shutdown hook, so
+// WithCrudHandlers cannot call Close automatically. Use NewCrudHandler for
+// manual route registration when the repository needs explicit cleanup.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Close() error {
 	if h == nil || h.resource == nil {
 		return nil
@@ -443,7 +458,13 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Close() error {
 }
 
 // WithCrudHandlers registers the standard create, read, update, patch, delete,
-// and list routes for a typed CRUD handler.
+// and list routes for a typed CRUD handler. The handler is constructed
+// internally by httpserver.With and is not returned to the caller.
+//
+// The pinned httpserver version has no shutdown hook for handlers registered
+// this way, so WithCrudHandlers cannot call CrudHandler.Close. If repository
+// prepared statements are enabled, use NewCrudHandler for manual route
+// registration and call Close exactly once during application shutdown.
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],

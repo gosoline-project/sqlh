@@ -349,18 +349,14 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
-	assertScope := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) error {
+	assertScope := func(qb *sqlr.QueryBuilderSelect) error {
 		query, arguments, err := qb.ToSql()
 		if err != nil {
 			return err
 		}
 		require.Contains(t, query, "account_id")
 		require.Contains(t, query, "domain")
-		if rowQuery {
-			require.Contains(t, query, "ORDER BY `name`")
-		} else {
-			require.NotContains(t, query, "ORDER BY")
-		}
+		require.Contains(t, query, "ORDER BY `name`")
 		require.Equal(t, []any{7, "allowed"}, arguments)
 
 		return nil
@@ -371,10 +367,10 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 			option(qb)
 		}
 
-		return nil, assertScope(qb, true)
+		return nil, assertScope(qb)
 	}).Once()
 	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
-		return 0, assertScope(qb, false)
+		return 0, assertScope(qb)
 	}).Once()
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
@@ -506,6 +502,21 @@ func TestCrudHandlerDeleteOutputErrorRollsBack(t *testing.T) {
 	output, err := handler.Delete(context.Background(), &InputById[int]{Id: 12})
 	require.Zero(t, output)
 	require.ErrorContains(t, err, "failed to transform deleted entity: output failed")
+}
+
+func TestCrudHandlerCloseClosesRepository(t *testing.T) {
+	repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+	repository.EXPECT().Close().Return(nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[crudTestEntity]()
+	require.NoError(t, err)
+
+	handler, err := newCrudHandler(repository, runner, schema, newCrudTestDefinition())
+	require.NoError(t, err)
+
+	require.NoError(t, handler.Close())
 }
 
 func newCrudTestDefinition() CrudDefinition[int, crudTestEntity, int, crudTestCreateInput, crudTestUpdateInput, ListInput, crudTestOutput] {

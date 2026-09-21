@@ -258,7 +258,7 @@ func (r *resource[K, E]) patch[Id sqlr.KeyTypes, IU Identified[Id], O any](
 		return zero, fmt.Errorf("patch input is required")
 	}
 
-	document := input.Document()
+	document := input.Document
 	if !document.valid() {
 		return zero, fmt.Errorf("patch document is required")
 	}
@@ -266,6 +266,15 @@ func (r *resource[K, E]) patch[Id sqlr.KeyTypes, IU Identified[Id], O any](
 	entity, err := r.lookup(ctx, tx, identity, input.Id, resourceLookupScope(input, visibility), r.builderUpdateRead)
 	if err != nil {
 		return zero, fmt.Errorf("failed to read entity before patch with id %v: %w", input.Id, err)
+	}
+
+	if len(document.fields) == 0 {
+		result, err := output(ctx, entity)
+		if err != nil {
+			return zero, fmt.Errorf("failed to transform patched entity: %w", err)
+		}
+
+		return result, nil
 	}
 
 	completeInput, err := patchInputFromEntity(ctx, entity)
@@ -330,8 +339,9 @@ func (r *resource[K, E]) buildListOperation[LI ListInputSource, O any](
 }
 
 // Query and count share one plan for entity and request scope. The default
-// count applies only the builder and scope, so Total remains independent of the
-// page. Custom callbacks receive the same plan and must preserve this split.
+// count applies builder, scope, and query modifiers, but not pagination, so
+// Total remains independent of the page. Custom callbacks receive the same
+// plan and must preserve this split.
 func (r *resource[K, E]) list[LI ListInputSource, O any](
 	ctx context.Context,
 	tx sqlr.TTx,
@@ -424,6 +434,7 @@ func (r *resource[K, E]) count(tx sqlr.TTx, plan QueryPlan) (int, error) {
 	if err := plan.ApplyScope(qb); err != nil {
 		return 0, err
 	}
+	plan.ApplyQueryModifiers(qb)
 
 	return r.repository.Count(tx, qb)
 }
