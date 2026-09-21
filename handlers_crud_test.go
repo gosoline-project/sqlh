@@ -195,7 +195,11 @@ func TestCrudHandlerCreateCommitsBeforeReturningTypedOutput(t *testing.T) {
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
-	repository.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, entity *crudTestEntity, _ ...func(*sqlr.QueryBuilderCreate)) error {
+	repository.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, entity *crudTestEntity, options ...func(*sqlr.QueryBuilderCreate)) error {
+		builder := sqlr.NewQueryBuilderCreate()
+		for _, option := range options {
+			option(builder)
+		}
 		entity.Id = 7
 
 		return nil
