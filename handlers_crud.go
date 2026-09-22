@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sync"
 
 	"github.com/gosoline-project/httpserver"
 	"github.com/gosoline-project/sqlc"
@@ -229,8 +230,10 @@ type CrudHandler[
 	LI ListInputSource,
 	O any,
 ] struct {
-	runner   *TxRunner
-	resource *resource[K, E]
+	runner    *TxRunner
+	resource  *resource[K, E]
+	closeOnce sync.Once
+	closeErr  error
 
 	patchOperation  TxOperation[PatchInput[Id], O]
 	createOperation TxOperation[IC, O]
@@ -442,29 +445,26 @@ func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) DeleteNoContent(ctx context.Conte
 }
 
 // Close releases resources held by the SQLR repository, including prepared
-// statements when repository prepared statements are enabled.
-//
-// Call Close exactly once for a handler created with NewCrudHandler. Handlers
-// created through WithCrudHandlers are constructed inside httpserver.With and
-// the pinned httpserver version does not expose a handler shutdown hook, so
-// WithCrudHandlers cannot call Close automatically. Use NewCrudHandler for
-// manual route registration when the repository needs explicit cleanup.
+// statements when repository prepared statements are enabled. Close blocks
+// until cleanup completes and returns the result from its first call on every
+// later call.
 func (h *CrudHandler[K, E, Id, IC, IU, LI, O]) Close() error {
-	if h == nil || h.resource == nil {
+	if h == nil {
 		return nil
 	}
 
-	return h.resource.close()
+	h.closeOnce.Do(func() {
+		if h.resource != nil {
+			h.closeErr = h.resource.close()
+		}
+	})
+
+	return h.closeErr
 }
 
 // WithCrudHandlers registers the standard create, read, update, patch, delete,
-// and list routes for a typed CRUD handler. The handler is constructed
-// internally by httpserver.With and is not returned to the caller.
-//
-// The pinned httpserver version has no shutdown hook for handlers registered
-// this way, so WithCrudHandlers cannot call CrudHandler.Close. If repository
-// prepared statements are enabled, use NewCrudHandler for manual route
-// registration and call Close exactly once during application shutdown.
+// and list routes for a typed CRUD handler. The HTTP server closes the handler
+// after it stops serving requests.
 func WithCrudHandlers[
 	K sqlr.KeyTypes,
 	E sqlr.Entitier[K],
