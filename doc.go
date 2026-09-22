@@ -36,17 +36,12 @@
 //
 // # Handler lifecycle
 //
-// [NewCrudHandler] exposes the constructed [CrudHandler] through its factory,
-// so applications that enable repository prepared statements can retain the
-// handler and call [CrudHandler.Close] exactly once during shutdown.
+// [WithCrudHandlers] registers a handler that [httpserver.With] closes after
+// the HTTP server stops serving requests. This also closes repository prepared
+// statements. [CrudHandler.Close] is blocking and idempotent.
 //
-// [WithCrudHandlers] constructs the handler inside [httpserver.With]. The
-// pinned httpserver version does not expose a shutdown hook for handlers
-// registered this way, so the handler and its repository are not reachable for
-// automatic cleanup. Applications that enable prepared statements must use
-// [NewCrudHandler] for manual route registration and call [CrudHandler.Close]
-// exactly once. Without that manual path, prepared statements remain allocated
-// for the process lifetime.
+// Applications that use [NewCrudHandler] for manual route registration own the
+// returned handler and must call [CrudHandler.Close] during shutdown.
 //
 // # Force filters and lists
 //

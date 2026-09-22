@@ -517,6 +517,7 @@ func TestCrudHandlerCloseClosesRepository(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, handler.Close())
+	require.NoError(t, handler.Close())
 }
 
 func newCrudTestDefinition() CrudDefinition[int, crudTestEntity, int, crudTestCreateInput, crudTestUpdateInput, ListInput, crudTestOutput] {
