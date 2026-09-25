@@ -162,7 +162,7 @@ func TestResourcePatchEmptyDocumentReturnsCurrentEntityWithoutUpdate(t *testing.
 	require.Equal(t, resourceTestOutput{Id: 7, Name: "current"}, output)
 }
 
-func TestResourceDeleteLookupDoesNotLock(t *testing.T) {
+func TestResourceDeleteLookupLocksBeforeDelete(t *testing.T) {
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
@@ -178,7 +178,7 @@ func TestResourceDeleteLookupDoesNotLock(t *testing.T) {
 
 		query, _, err := qb.ToSql()
 		require.NoError(t, err)
-		require.NotContains(t, query, "FOR UPDATE")
+		require.Contains(t, query, "FOR UPDATE")
 
 		return []resourceTestEntity{entity}, nil
 	}).Once()
