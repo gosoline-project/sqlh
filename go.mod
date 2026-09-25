@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
-	github.com/gosoline-project/httpserver v0.6.4-0.20260922090808-5ebc871c5d00
+	github.com/gosoline-project/httpserver v0.6.4
 	github.com/gosoline-project/sqlc v0.4.0
 	github.com/gosoline-project/sqlr v0.9.0
 	github.com/jinzhu/inflection v1.0.0
