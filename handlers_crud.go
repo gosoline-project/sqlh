@@ -330,14 +330,6 @@ func newCrudHandler[
 		return nil, err
 	}
 
-	var patchAssociationFields, patchAssociationTriggers map[string]string
-	if definition.PatchOperation == nil {
-		patchAssociationFields, patchAssociationTriggers, err = res.configurePatch[IU](definition.PatchAssociations, definition.PatchAssociationTriggers)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	createOperation, err := res.buildCreateOperation(definition.CreateOperation, definition.CreateInput, definition.Output)
 	if err != nil {
 		return nil, err
@@ -357,8 +349,8 @@ func newCrudHandler[
 		definition.PatchInputFromEntity,
 		definition.UpdateInput,
 		definition.Output,
-		patchAssociationFields,
-		patchAssociationTriggers,
+		definition.PatchAssociations,
+		definition.PatchAssociationTriggers,
 	)
 	if err != nil {
 		return nil, err

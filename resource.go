@@ -64,20 +64,6 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	}, nil
 }
 
-func (r *resource[K, E]) configurePatch[IU any](associations map[string]string, triggers map[string]string) (associationFields map[string]string, associationTriggers map[string]string, err error) {
-	associationFields, err = buildPatchAssociationFields[IU](r.tags.updateSyncPaths, associations)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to configure patch associations: %w", err)
-	}
-
-	associationTriggers, err = buildPatchAssociationTriggers(r.tags.updateSyncPaths, triggers)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to configure patch association triggers: %w", err)
-	}
-
-	return associationFields, associationTriggers, nil
-}
-
 func (r *resource[K, E]) buildCreateOperation[IC, O any](
 	custom CrudOperation[K, E, IC, O],
 	createInput func(context.Context, *IC) (*E, error),
@@ -218,14 +204,24 @@ func (r *resource[K, E]) buildPatchOperation[Id sqlr.KeyTypes, IU Identified[Id]
 	patchInputFromEntity func(context.Context, *E) (*IU, error),
 	updateInput func(context.Context, *E, *IU) (*E, error),
 	output func(context.Context, *E) (O, error),
-	associationFields map[string]string,
-	associationTriggers map[string]string,
+	associations map[string]string,
+	triggers map[string]string,
 ) (TxOperation[PatchInput[Id], O], error) {
 	if custom != nil {
 		return func(ctx context.Context, tx sqlr.TTx, input *PatchInput[Id]) (O, error) {
 			return custom(ctx, tx, r.repository, input)
 		}, nil
 	}
+	associationFields, err := buildPatchAssociationFields[IU](r.tags.updateSyncPaths, associations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure patch associations: %w", err)
+	}
+
+	associationTriggers, err := buildPatchAssociationTriggers(r.tags.updateSyncPaths, triggers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure patch association triggers: %w", err)
+	}
+
 	if patchInputFromEntity == nil {
 		return nil, fmt.Errorf("CRUD patch input from entity mapper is required")
 	}
