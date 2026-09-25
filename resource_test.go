@@ -161,3 +161,37 @@ func TestResourcePatchEmptyDocumentReturnsCurrentEntityWithoutUpdate(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, resourceTestOutput{Id: 7, Name: "current"}, output)
 }
+
+func TestResourceDeleteLookupDoesNotLock(t *testing.T) {
+	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
+	schema, err := sqlr.ParseSchema[resourceTestEntity]()
+	require.NoError(t, err)
+	resource, err := newResource(repository, schema)
+	require.NoError(t, err)
+
+	entity := resourceTestEntity{Entity: sqlr.Entity[int]{Id: 7}, Name: "current"}
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]resourceTestEntity, error) {
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range options {
+			option(qb)
+		}
+
+		query, _, err := qb.ToSql()
+		require.NoError(t, err)
+		require.NotContains(t, query, "FOR UPDATE")
+
+		return []resourceTestEntity{entity}, nil
+	}).Once()
+	repository.EXPECT().Delete(mock.Anything, entity.Id, mock.Anything).Return(nil).Once()
+
+	deleted, err := resource.deleteEntity(
+		context.Background(),
+		sqlr.TTx{},
+		&InputById[int]{Id: entity.Id},
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, &entity, deleted)
+}

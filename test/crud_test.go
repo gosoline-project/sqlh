@@ -66,7 +66,7 @@ func (s *CrudIntegrationTestSuite) TestReadPostPreloadsAssociations(app suite.Ap
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal(PostOutput{
 		Id:       1,
-		AuthorId: 1,
+		AuthorId: int64Ptr(1),
 		Title:    "Getting Started with Go",
 		Status:   "published",
 		Author: &AuthorOutput{
@@ -107,7 +107,7 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal([]PostOutput{{
 		Id:       2,
-		AuthorId: 1,
+		AuthorId: int64Ptr(1),
 		Title:    "Advanced Go Patterns",
 		Status:   "published",
 		Author: &AuthorOutput{
@@ -153,7 +153,7 @@ func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTes
 
 	expectedOutput := PostOutput{
 		Id:       output.Id,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Integration Testing with SQLH",
 		Status:   "draft",
 		Tags: []TagOutput{
@@ -173,7 +173,7 @@ func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTes
 
 	s.Equal(PostOutput{
 		Id:       output.Id,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Integration Testing with SQLH",
 		Status:   "draft",
 		Author: &AuthorOutput{
@@ -199,7 +199,7 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(PostUpdateInput{
-			AuthorId: 1,
+			AuthorId: int64Ptr(1),
 			Title:    "Getting Started with Go and SQLH",
 			Status:   "published",
 			Tags: []PostInputTag{
@@ -217,7 +217,7 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 
 	expectedOutput := PostOutput{
 		Id:       1,
-		AuthorId: 1,
+		AuthorId: int64Ptr(1),
 		Title:    "Getting Started with Go and SQLH",
 		Status:   "published",
 		Tags: []TagOutput{
@@ -237,7 +237,7 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostSyncsTags(app suite.AppUnderTes
 
 	s.Equal(PostOutput{
 		Id:       1,
-		AuthorId: 1,
+		AuthorId: int64Ptr(1),
 		Title:    "Getting Started with Go and SQLH",
 		Status:   "published",
 		Author: &AuthorOutput{
@@ -390,7 +390,17 @@ func (s *CrudIntegrationTestSuite) TestPatchMutationPreloadPostNullClearsNullabl
 	}
 
 	s.Equal(http.StatusOK, response.StatusCode())
-	s.Zero(output.AuthorId)
+	s.Nil(output.AuthorId)
+	var crossViewOutput PostOutput
+	response, err = client.R().
+		SetResult(&crossViewOutput).
+		Execute(http.MethodGet, "/v1/post/1")
+	if err != nil {
+		return err
+	}
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Nil(crossViewOutput.AuthorId)
+	s.Nil(crossViewOutput.Author)
 
 	stored, err := s.readMutationPreloadPost(1)
 	if err != nil {
@@ -435,7 +445,7 @@ func (s *CrudIntegrationTestSuite) TestPatchMutationPreloadPostOmittedAuthorPres
 	}
 
 	s.Equal(http.StatusOK, response.StatusCode())
-	s.Equal(int64(1), output.AuthorId)
+	s.Equal(int64Ptr(1), output.AuthorId)
 
 	stored, err := s.readMutationPreloadPost(1)
 	if err != nil {
@@ -496,7 +506,7 @@ func (s *CrudIntegrationTestSuite) TestCreatePostPreloadsTagsOnCreate(app suite.
 	s.NotZero(output.Id)
 	s.Equal(MutationPreloadPostOutput{
 		Id:       output.Id,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Create Preload Tags",
 		Status:   "draft",
 		Tags: []TagOutput{
@@ -514,7 +524,7 @@ func (s *CrudIntegrationTestSuite) TestCreatePostPreloadsTagsOnCreate(app suite.
 
 	s.Equal(PostOutput{
 		Id:       output.Id,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Create Preload Tags",
 		Status:   "draft",
 		Author: &AuthorOutput{
@@ -558,7 +568,7 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 	s.Equal(http.StatusOK, response.StatusCode())
 	s.Equal(MutationPreloadPostOutput{
 		Id:       1,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Updated Preload Tags",
 		Status:   "published",
 		Tags: []TagOutput{
@@ -576,7 +586,7 @@ func (s *CrudIntegrationTestSuite) TestUpdatePostPreloadsTagsOnUpdate(app suite.
 
 	s.Equal(PostOutput{
 		Id:       1,
-		AuthorId: 2,
+		AuthorId: int64Ptr(2),
 		Title:    "Updated Preload Tags",
 		Status:   "published",
 		Author: &AuthorOutput{

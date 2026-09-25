@@ -622,3 +622,36 @@ func TestCrudHandlerCustomOperationsReceiveConfiguredRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 6, deleted.Id)
 }
+
+func TestCrudHandlerCustomPatchOperationDoesNotRequireAssociationFieldsOnUpdateInput(t *testing.T) {
+	repository := sqlrmocks.NewRepositoryTx[int, patchTestAssociationEntity](t)
+	tx := &transactionTestTx{Tx: newTestTx(t)}
+	tx.EXPECT().Commit().Return(nil).Once()
+
+	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+	require.NoError(t, err)
+	schema, err := sqlr.ParseSchema[patchTestAssociationEntity]()
+	require.NoError(t, err)
+
+	definition := CrudDefinition[int, patchTestAssociationEntity, int, crudTestCreateInput, crudTestUpdateInput, ListInput, int]{
+		CreateInput: func(_ context.Context, _ *crudTestCreateInput) (*patchTestAssociationEntity, error) {
+			return &patchTestAssociationEntity{}, nil
+		},
+		UpdateInput: func(_ context.Context, entity *patchTestAssociationEntity, _ *crudTestUpdateInput) (*patchTestAssociationEntity, error) {
+			return entity, nil
+		},
+		Output: func(_ context.Context, entity *patchTestAssociationEntity) (int, error) {
+			return entity.Id, nil
+		},
+		PatchOperation: func(_ context.Context, _ sqlr.TTx, _ sqlr.RepositoryTx[int, patchTestAssociationEntity], input *PatchInput[int]) (int, error) {
+			return input.Id, nil
+		},
+	}
+
+	handler, err := newCrudHandler(repository, runner, schema, definition)
+	require.NoError(t, err)
+
+	patched, err := handler.Patch(t.Context(), &PatchInput[int]{InputById: InputById[int]{Id: 7}})
+	require.NoError(t, err)
+	require.Equal(t, 7, patched)
+}

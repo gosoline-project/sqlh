@@ -13,7 +13,7 @@ import (
 
 type Post struct {
 	sqlr.Entity[int64]
-	AuthorId int64  `db:"author_id"`
+	AuthorId *int64 `db:"author_id"`
 	Title    string `db:"title"`
 	Status   string `db:"status"`
 	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,query"`
@@ -57,7 +57,7 @@ type PostCreateInput struct {
 
 type PostUpdateInput struct {
 	sqlh.InputById[int64]
-	AuthorId int64          `json:"author_id"`
+	AuthorId *int64         `json:"author_id"`
 	Title    string         `json:"title"`
 	Status   string         `json:"status"`
 	Tags     []PostInputTag `json:"tags"`
@@ -85,7 +85,7 @@ type MutationPreloadPostInputTag struct {
 
 type PostOutput struct {
 	Id        int64         `json:"id"`
-	AuthorId  int64         `json:"author_id"`
+	AuthorId  *int64        `json:"author_id"`
 	Title     string        `json:"title"`
 	Status    string        `json:"status"`
 	Author    *AuthorOutput `json:"author,omitempty"`
@@ -106,7 +106,7 @@ type TagOutput struct {
 
 type MutationPreloadPostOutput struct {
 	Id        int64       `json:"id"`
-	AuthorId  int64       `json:"author_id"`
+	AuthorId  *int64      `json:"author_id"`
 	Title     string      `json:"title"`
 	Status    string      `json:"status"`
 	Tags      []TagOutput `json:"tags,omitempty"`
@@ -119,8 +119,10 @@ type PostTransformer struct{}
 type MutationPreloadPostTransformer struct{}
 
 func (t *PostTransformer) TransformCreateInput(_ context.Context, input *PostCreateInput) (*Post, error) {
+	authorId := input.AuthorId
+
 	return &Post{
-		AuthorId: input.AuthorId,
+		AuthorId: &authorId,
 		Title:    input.Title,
 		Status:   input.Status,
 		Tags:     inputTagsToTags(input.Tags),
@@ -237,14 +239,9 @@ func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post
 		}
 	}
 
-	authorId := int64(0)
-	if post.AuthorId != nil {
-		authorId = *post.AuthorId
-	}
-
 	return MutationPreloadPostOutput{
 		Id:        post.Id,
-		AuthorId:  authorId,
+		AuthorId:  post.AuthorId,
 		Title:     post.Title,
 		Status:    post.Status,
 		Tags:      tags,
