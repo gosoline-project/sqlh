@@ -52,12 +52,18 @@
 // list, count, identity, update, and delete lookups. A force filter must only
 // add restrictive WHERE conditions.
 //
-// [ListInput] provides filters, nested pagination, and force filters. [ListOutput]
+// [ListInput] provides filters, native orderBy keys, nested pagination, and force filters. [ListOutput]
 // contains typed results and an explicit total. Default query and count paths
 // use the same user filters, force filters, and soft-delete scope. Custom list
 // inputs must implement [ListInputSource], including ApplyQueryModifiers. Use a
 // no-op implementation when the input has no row-only modifiers.
 // A positive offset requires a positive limit.
+// Ordering uses sqlc.JsonOrder for column identifiers and case-insensitive asc/desc directions,
+// defaulting to asc. Omitted ordering preserves existing query-builder ordering.
+// All list inputs must implement ValidateQueryModifiers and are validated before
+// either default or custom query/count execution. Use a no-op validator when
+// no modifiers need validation. Applications can override
+// ListInput.ValidateQueryModifiers to restrict sortable columns further.
 //
 // Custom Query and Count callbacks must call QueryPlan.ApplyBuilder and then
 // QueryPlan.ApplyScope. A custom Query callback must then call

@@ -50,7 +50,7 @@ files` for `./test`. Use the tagged command above to run it.
 - `DeleteOperation` returns the deleted entity. `Delete` maps it through `DeleteOutput`; `DeleteNoContent` skips mapping and returns 204.
 - `DeleteOutput` has the same signature as `Output`, so callers can assign `definition.DeleteOutput = definition.Output`.
 - Force filters are server-owned restrictions. SQLH applies them; custom list inputs must not duplicate them in `ApplyFilters`.
-- Custom list inputs must implement every `ListInputSource` phase. Use a no-op `ApplyQueryModifiers` when no row-only modifiers are needed.
+- Custom list inputs must implement every `ListInputSource` phase. Use a no-op `ApplyQueryModifiers` when no row-only modifiers are needed and a no-op validator when no modifiers need validation. SQLH validates pagination and query modifiers before default queries or custom query/count callbacks.
 - Custom list query and count callbacks must apply `QueryPlan.ApplyBuilder` and `QueryPlan.ApplyScope`. Query callbacks must then apply `ApplyQueryModifiers` and `ApplyPagination`, in that order. Count callbacks must apply neither.
 - Relation behavior comes from `sqlh` tags. Do not add public query-builder hooks without a demonstrated requirement.
 

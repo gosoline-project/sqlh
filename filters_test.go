@@ -1,13 +1,57 @@
 package sqlh
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
+	"github.com/justtrackio/gosoline/pkg/validation"
 	"github.com/stretchr/testify/require"
 )
+
+func TestListInputNativeOrdering(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     string
+		expected string
+	}{
+		{"omitted", `{}`, "ORDER BY `existing` DESC"},
+		{"empty", `{"orderBy":[]}`, "ORDER BY `existing` DESC"},
+		{"default ascending", `{"orderBy":[{"column":"name"}]}`, "ORDER BY `name` ASC"},
+		{"multiple keys", `{"orderBy":[{"column":"items.created_at","direction":"desc"},{"column":"items.id","direction":"ASC"}]}`, "ORDER BY `items`.`created_at` DESC, `items`.`id` ASC"},
+		{"mixed case", `{"orderBy":[{"column":"name","direction":"DeSc"}]}`, "ORDER BY `name` DESC"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var input ListInput
+			require.NoError(t, json.Unmarshal([]byte(tc.body), &input))
+			require.NoError(t, input.ValidateQueryModifiers())
+			qb := sqlr.NewQueryBuilderSelect().OrderBy(sqlc.Col("existing").Desc())
+			input.ApplyQueryModifiers(qb)
+			query, params, err := qb.ToSql()
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, query)
+			require.Empty(t, params)
+			input.ApplyQueryModifiers(nil)
+		})
+	}
+}
+
+func TestListInputValidatesNativeOrdering(t *testing.T) {
+	input := ListInput{OrderBy: []sqlc.JsonOrder{
+		{Column: "name"},
+		{Column: "id", Direction: "invalid"},
+	}}
+	err := input.ValidateQueryModifiers()
+	require.EqualError(t, err, "validation: orderBy[1]: direction must be asc or desc")
+	require.True(t, validation.IsValidationError(err))
+	qb := sqlr.NewQueryBuilderSelect().OrderBy("existing")
+	input.ApplyQueryModifiers(qb)
+	query, _, err := qb.ToSql()
+	require.NoError(t, err)
+	require.Equal(t, "ORDER BY `existing`", query)
+}
 
 func TestListInputAppliesUserFilterWithoutPagination(t *testing.T) {
 	input := ListInput{

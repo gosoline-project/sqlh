@@ -42,13 +42,14 @@ type ListPage struct {
 }
 
 // ListInput is the standard SQLH list input. Applications can embed it in a
-// domain-specific input to retain the predefined filter, page, and force-filter
-// behavior.
+// domain-specific input to retain the predefined filter, ordering, page, and
+// force-filter behavior.
 type ListInput struct {
 	ForceFilters
 
-	Filter sqlc.JsonFilter `json:"filter"`
-	Page   ListPage        `json:"page,omitempty"`
+	Filter  sqlc.JsonFilter  `json:"filter"`
+	OrderBy []sqlc.JsonOrder `json:"orderBy,omitempty"`
+	Page    ListPage         `json:"page,omitempty"`
 }
 
 // ApplyFilters applies the user filter. SQLH applies force filters separately
@@ -71,7 +72,34 @@ func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
 
 // ApplyQueryModifiers applies row-only query modifiers such as grouping and ordering.
 // If a modifier changes row cardinality, the CRUD definition must provide a matching Count callback.
-func (ListInput) ApplyQueryModifiers(*sqlr.QueryBuilderSelect) {}
+// Call ValidateQueryModifiers before applying caller-supplied ordering directly.
+func (i ListInput) ApplyQueryModifiers(qb *sqlr.QueryBuilderSelect) {
+	if qb == nil || len(i.OrderBy) == 0 {
+		return
+	}
+
+	order := make([]any, 0, len(i.OrderBy))
+	for _, key := range i.OrderBy {
+		expression, err := key.ToExpression()
+		if err != nil {
+			return
+		}
+		order = append(order, expression)
+	}
+	qb.OrderBy(order...)
+}
+
+// ValidateQueryModifiers rejects malformed ordering before any list query runs.
+// Applications may override it to additionally restrict sortable columns.
+func (i ListInput) ValidateQueryModifiers() error {
+	for index, key := range i.OrderBy {
+		if _, err := key.ToExpression(); err != nil {
+			return validation.NewError(fmt.Errorf("orderBy[%d]: %w", index, err))
+		}
+	}
+
+	return nil
+}
 
 // ApplyPagination applies the standard page limit and offset fields.
 func (i ListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
@@ -108,6 +136,7 @@ type ListInputSource interface {
 	ApplyQueryModifiers(*sqlr.QueryBuilderSelect)
 	ApplyPagination(*sqlr.QueryBuilderSelect)
 	ValidatePagination() error
+	ValidateQueryModifiers() error
 }
 
 // QueryScope applies the non-pagination part of a list query. It is passed to

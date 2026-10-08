@@ -354,6 +354,9 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	if err := value.ValidatePagination(); err != nil {
 		return ListOutput[O]{}, err
 	}
+	if err := value.ValidateQueryModifiers(); err != nil {
+		return ListOutput[O]{}, err
+	}
 
 	plan := QueryPlan{
 		ApplyBuilder: composeBuilders(r.builderQuery),

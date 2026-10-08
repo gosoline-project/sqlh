@@ -126,6 +126,56 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 	return nil
 }
 
+func (s *CrudIntegrationTestSuite) TestQueryPostNativeOrderingBeforePagination(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output sqlh.ListOutput[PostOutput]
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(`{"orderBy":[{"column":"posts.status","direction":"desc"},{"column":"posts.id","direction":"desc"}],"page":{"limit":1,"offset":1}}`).
+		SetResult(&output).
+		Execute(http.MethodPost, "/v1/posts")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal(sqlh.ListOutput[PostOutput]{
+		Total: 3,
+		Results: []PostOutput{{
+			Id: 1, AuthorId: int64Ptr(1), Title: "Getting Started with Go", Status: "published",
+			Author:    &AuthorOutput{Id: 1, Name: "Alice Johnson"},
+			Tags:      []TagOutput{{Id: 1, Name: "golang"}, {Id: 4, Name: "tutorial"}},
+			CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+		}},
+	}, output)
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestQueryPostRejectsInvalidOrdering(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	for _, body := range []string{
+		`{"orderBy":[{"column":"posts.id","direction":"invalid"}]}`,
+		`{"orderBy":[{"column":"LOWER(title)","direction":"asc"}]}`,
+	} {
+		response, err := client.R().
+			SetHeader("Content-Type", "application/json").
+			SetBody(body).
+			Execute(http.MethodPost, "/v1/posts")
+		if err != nil {
+			return err
+		}
+		s.Equal(http.StatusBadRequest, response.StatusCode())
+	}
+
+	return nil
+}
+
 func (s *CrudIntegrationTestSuite) TestCreatePostSyncsTags(app suite.AppUnderTest, client *resty.Client) error {
 	defer app.WaitDone()
 	defer app.Stop()

@@ -3,6 +3,7 @@ package sqlh
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -69,6 +70,10 @@ func (i crudTestListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
 
 func (i crudTestListInput) ValidatePagination() error {
 	return i.validatePaginationErr
+}
+
+func (crudTestListInput) ValidateQueryModifiers() error {
+	return nil
 }
 
 func TestCrudHandlerListCustomQueryAndCountApplySharedPlan(t *testing.T) {
@@ -163,6 +168,38 @@ func TestCrudHandlerListPaginationErrorRollsBack(t *testing.T) {
 	require.ErrorIs(t, err, paginationErr)
 	require.EqualError(t, err, paginationErr.Error())
 	require.Zero(t, applyFiltersCalls)
+}
+
+func TestCrudHandlerListInvalidOrderingRollsBackBeforeQuery(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(fmt.Sprintf("custom=%t", custom), func(t *testing.T) {
+			repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+			tx := &transactionTestTx{Tx: newTestTx(t)}
+			tx.EXPECT().Rollback().Return(nil).Once()
+			runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+			require.NoError(t, err)
+			schema, err := sqlr.ParseSchema[crudTestEntity]()
+			require.NoError(t, err)
+			definition := newCrudTestDefinitionWithList[ListInput]()
+			if custom {
+				definition.Query = func(context.Context, sqlr.TTx, sqlr.RepositoryTx[int, crudTestEntity], *ListInput, QueryPlan) ([]crudTestEntity, error) {
+					t.Fatal("invalid ordering must not reach custom query")
+
+					return nil, nil
+				}
+				definition.Count = func(context.Context, sqlr.TTx, sqlr.RepositoryTx[int, crudTestEntity], *ListInput, QueryPlan) (int, error) {
+					t.Fatal("invalid ordering must not reach custom count")
+
+					return 0, nil
+				}
+			}
+			handler, err := newCrudHandler(repository, runner, schema, definition)
+			require.NoError(t, err)
+			output, err := handler.List(context.Background(), &ListInput{OrderBy: []sqlc.JsonOrder{{Column: "name", Direction: "invalid"}}})
+			require.Zero(t, output)
+			require.EqualError(t, err, "validation: orderBy[0]: direction must be asc or desc")
+		})
+	}
 }
 
 func TestCrudHandlerListApplyFiltersErrorRollsBack(t *testing.T) {
