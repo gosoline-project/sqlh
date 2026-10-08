@@ -3,8 +3,11 @@ package sqlh
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
 	sqlrmocks "github.com/gosoline-project/sqlr/mocks"
 	"github.com/stretchr/testify/mock"
@@ -27,6 +30,37 @@ type resourceTestOutput struct {
 }
 type resourceTestStringUpdateInput struct {
 	InputById[string]
+}
+
+type resourceTestValidatedListInput struct {
+	ListInput
+	validationErr error
+}
+
+func (i resourceTestValidatedListInput) ValidateQueryModifiers() error {
+	return i.validationErr
+}
+
+func TestResourceValidatesCustomInputAndPointerInput(t *testing.T) {
+	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
+	schema, err := sqlr.ParseSchema[resourceTestEntity]()
+	require.NoError(t, err)
+	resource, err := newResource(repository, schema)
+	require.NoError(t, err)
+	validationErr := errors.New("column is not sortable")
+	input := resourceTestValidatedListInput{validationErr: validationErr}
+	mapper := func(context.Context, *resourceTestEntity) (resourceTestOutput, error) {
+		t.Fatal("invalid input must not reach output mapping")
+
+		return resourceTestOutput{}, nil
+	}
+	output, err := resource.list(context.Background(), sqlr.TTx{}, &input, nil, nil, nil, mapper)
+	require.ErrorIs(t, err, validationErr)
+	require.Zero(t, output)
+	inputPointer := &input
+	output, err = resource.list(context.Background(), sqlr.TTx{}, &inputPointer, nil, nil, nil, mapper)
+	require.ErrorIs(t, err, validationErr)
+	require.Zero(t, output)
 }
 
 type resourceTestListInput struct {
@@ -52,6 +86,10 @@ func (i resourceTestListInput) ApplyPagination(qb *sqlr.QueryBuilderSelect) {
 }
 
 func (resourceTestListInput) ValidatePagination() error {
+	return nil
+}
+
+func (resourceTestListInput) ValidateQueryModifiers() error {
 	return nil
 }
 
@@ -118,6 +156,76 @@ func TestResourceDefaultCountAppliesQueryModifiers(t *testing.T) {
 		Results: []resourceTestOutput{{Id: 1, Name: "first"}},
 		Total:   1,
 	}, output)
+}
+
+func TestResourceNativeOrderingWithDefaultAndCustomCallbacks(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(fmt.Sprintf("custom=%t", custom), func(t *testing.T) {
+			repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
+			schema, err := sqlr.ParseSchema[resourceTestEntity]()
+			require.NoError(t, err)
+			resource, err := newResource(repository, schema)
+			require.NoError(t, err)
+			input := ListInput{
+				Filter:  sqlc.JsonFilter{Type: sqlc.JsonFilterEq, Column: "name", Value: "first"},
+				OrderBy: []sqlc.JsonOrder{{Column: "name", Direction: "desc"}, {Column: "id"}},
+				Page:    ListPage{Limit: 2, Offset: 1},
+			}
+			repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]resourceTestEntity, error) {
+				qb := sqlr.NewQueryBuilderSelect()
+				require.Len(t, options, 1)
+				options[0](qb)
+				query, params, err := qb.ToSql()
+				require.NoError(t, err)
+				require.Equal(t, "WHERE `name` = ? ORDER BY `name` DESC, `id` ASC LIMIT 2 OFFSET 1", query)
+				require.Equal(t, []any{"first"}, params)
+
+				return []resourceTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
+			}).Once()
+			repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
+				query, params, err := qb.ToSql()
+				require.NoError(t, err)
+				expected := "WHERE `name` = ?"
+				if !custom {
+					expected += " ORDER BY `name` DESC, `id` ASC"
+				}
+				require.Equal(t, expected, query)
+				require.Equal(t, []any{"first"}, params)
+
+				return 3, nil
+			}).Once()
+			var query ListQuery[int, resourceTestEntity, ListInput]
+			var count ListCount[int, resourceTestEntity, ListInput]
+			if custom {
+				query = func(_ context.Context, tx sqlr.TTx, repo sqlr.RepositoryTx[int, resourceTestEntity], _ *ListInput, plan QueryPlan) ([]resourceTestEntity, error) {
+					qb := sqlr.NewQueryBuilderSelect()
+					plan.ApplyBuilder(qb)
+					if err := plan.ApplyScope(qb); err != nil {
+						return nil, err
+					}
+					plan.ApplyQueryModifiers(qb)
+					plan.ApplyPagination(qb)
+
+					return repo.Query(tx, func(target *sqlr.QueryBuilderSelect) { *target = *qb })
+				}
+				count = func(_ context.Context, tx sqlr.TTx, repo sqlr.RepositoryTx[int, resourceTestEntity], _ *ListInput, plan QueryPlan) (int, error) {
+					qb := sqlr.NewQueryBuilderSelect()
+					plan.ApplyBuilder(qb)
+					if err := plan.ApplyScope(qb); err != nil {
+						return 0, err
+					}
+
+					return repo.Count(tx, qb)
+				}
+			}
+			output, err := resource.list(context.Background(), sqlr.TTx{}, &input, nil, query, count,
+				func(_ context.Context, entity *resourceTestEntity) (resourceTestOutput, error) {
+					return resourceTestOutput{Id: entity.Id, Name: entity.Name}, nil
+				})
+			require.NoError(t, err)
+			require.Equal(t, ListOutput[resourceTestOutput]{Results: []resourceTestOutput{{Id: 1, Name: "first"}}, Total: 3}, output)
+		})
+	}
 }
 
 func TestResourcePatchEmptyDocumentReturnsCurrentEntityWithoutUpdate(t *testing.T) {
