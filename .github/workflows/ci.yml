@@ -78,7 +78,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up go-linters
+        uses: jdx/mise-action@v2
+        with:
+          install_args: "github:justtrackio/go-linters"
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          install-mode: none

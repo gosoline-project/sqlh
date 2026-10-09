@@ -20,7 +20,7 @@ Primary responsibilities:
 ## Toolchain
 Tool versions are pinned in `mise.toml`:
 - Go 1.27.0;
-- golangci-lint 2.13.2.
+- go-linters 0.3.0 (golangci-lint 2.13.1).
 
 ## Canonical commands
 Run commands from the repository root.
