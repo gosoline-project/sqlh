@@ -5,11 +5,11 @@ go 1.27.0
 require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
-	github.com/gosoline-project/httpserver v0.6.5-0.20261013103943-31d500aa79f7
-	github.com/gosoline-project/sqlc v0.4.1-0.20261013103420-68cd6d2f0711
-	github.com/gosoline-project/sqlr v0.9.2-0.20261013113152-1ea2247f071d
+	github.com/gosoline-project/httpserver v0.6.5-0.20261013124439-0538a07a7c58
+	github.com/gosoline-project/sqlc v0.4.1-0.20261013124322-f3bdb6518b42
+	github.com/gosoline-project/sqlr v0.9.2-0.20261013125204-bbd729912067
 	github.com/jinzhu/inflection v1.0.0
-	github.com/justtrackio/gosoline v0.68.1-0.20261013100521-f4dec424c28c
+	github.com/justtrackio/gosoline v0.68.1-0.20261013123101-dd90ce372ff3
 	github.com/stretchr/testify v1.11.1
 )
 
