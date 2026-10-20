@@ -52,18 +52,36 @@
 // list, count, identity, update, and delete lookups. A force filter must only
 // add restrictive WHERE conditions.
 //
-// [ListInput] provides filters, native orderBy keys, nested pagination, and force filters. [ListOutput]
-// contains typed results and an explicit total. Default query and count paths
-// use the same user filters, force filters, and soft-delete scope. Custom list
-// inputs must implement [ListInputSource], including ApplyQueryModifiers. Use a
-// no-op implementation when the input has no row-only modifiers.
-// A positive offset requires a positive limit.
-// Ordering uses sqlc.JsonOrder for column identifiers and case-insensitive asc/desc directions,
-// defaulting to asc. Omitted ordering preserves existing query-builder ordering.
-// All list inputs must implement ValidateQueryModifiers and are validated before
-// either default or custom query/count execution. Use a no-op validator when
-// no modifiers need validation. Applications can override
-// ListInput.ValidateQueryModifiers to restrict sortable columns further.
+// [ListInput] provides public filters, orderBy keys, nested pagination, and
+// force filters. [JsonFilter] and [JsonOrder] use "field" for public JSON names,
+// not database columns or SQL expressions. Filter operators remain the sqlc
+// JsonFilterType constants. Ordering accepts case-insensitive asc/desc directions
+// and defaults to asc; omitted ordering preserves existing builder ordering.
+// [ListOutput] contains typed results and an explicit total. Default query and
+// count paths share user filters, force filters, and soft-delete scope. Count
+// omits row-only modifiers, ordering, and pagination.
+//
+// CrudDefinition.QueryFields maps public names to entity Go field paths. A
+// non-nil map is the complete allowlist, not an addition to automatic fields;
+// an empty map exposes no public query fields. A nil map derives public names
+// from scalar entity JSON fields backed by SQLR database metadata. Hidden JSON
+// fields, computed fields without persisted metadata, and relation collections
+// are not automatically exposed. Explicit paths may traverse one direct to-one
+// relation, but not collections or multi-hop relations. SQLH resolves database
+// identifiers itself and qualifies base columns with the entity table.
+//
+// Custom list inputs implement [ListInputSource], including GetFilter and
+// GetOrderBy. Public fields, operators, ordering, pagination, and
+// ValidateQueryModifiers are validated before default or custom query/count
+// callbacks. A positive offset requires a positive limit. Use a no-op
+// ValidateQueryModifiers when no additional modifier validation is needed.
+//
+// Optional custom ApplyFilters and ApplyQueryModifiers methods are trusted
+// server-side extensions, not public field resolution hooks. ApplyFilters adds
+// shared restrictions; ApplyQueryModifiers adds row-only grouping or ordering.
+// Neither method is provided by ListInput. Never pass unvalidated request
+// identifiers or SQL expressions through these extensions. If row modifiers
+// change cardinality, provide a matching custom Count callback.
 //
 // Custom Query and Count callbacks must call QueryPlan.ApplyBuilder and then
 // QueryPlan.ApplyScope. A custom Query callback must then call

@@ -49,9 +49,12 @@ files` for `./test`. Use the tagged command above to run it.
 - `*Operation` fields replace a complete default operation. Each override receives the active transaction and the configured repository.
 - `DeleteOperation` returns the deleted entity. `Delete` maps it through `DeleteOutput`; `DeleteNoContent` skips mapping and returns 204.
 - `DeleteOutput` has the same signature as `Output`, so callers can assign `definition.DeleteOutput = definition.Output`.
-- Force filters are server-owned restrictions. SQLH applies them; custom list inputs must not duplicate them in `ApplyFilters`.
-- Custom list inputs must implement every `ListInputSource` phase. Use a no-op `ApplyQueryModifiers` when no row-only modifiers are needed and a no-op validator when no modifiers need validation. SQLH validates pagination and query modifiers before default queries or custom query/count callbacks.
-- Custom list query and count callbacks must apply `QueryPlan.ApplyBuilder` and `QueryPlan.ApplyScope`. Query callbacks must then apply `ApplyQueryModifiers` and `ApplyPagination`, in that order. Count callbacks must apply neither.
+- Force filters are server-owned restrictions. SQLH applies them; custom list inputs must not duplicate them in optional trusted `ApplyFilters` methods.
+- Public filters and ordering use SQLH `JsonFilter`/`JsonOrder` with JSON `field` names, never request-provided database columns or SQL expressions. Filter operators remain `sqlc.JsonFilterType` constants.
+- `CrudDefinition.QueryFields` maps public names to entity Go field paths. A non-nil map is the complete allowlist; an empty map exposes nothing. Nil derives scalar entity JSON names backed by SQLR database metadata, excluding hidden or nonpersisted fields and relation collections. Explicit paths support only a direct to-one relation, not to-many or multi-hop paths. SQLH qualifies base columns with the entity table.
+- Custom list inputs implement `ListInputSource`, including `GetFilter`, `GetOrderBy`, pagination, force filters, and validators. SQLH validates public fields and operators, pagination, and query modifiers before default queries or custom query/count callbacks.
+- `ListInput` does not expose raw `ApplyFilters` or `ApplyQueryModifiers` methods. Custom inputs may implement these optional trusted server-side extensions for shared restrictions and row-only modifiers respectively; never forward unvalidated public identifiers through them.
+- Custom list query and count callbacks must apply `QueryPlan.ApplyBuilder` and `QueryPlan.ApplyScope`. Query callbacks must then apply `ApplyQueryModifiers` and `ApplyPagination`, in that order. Count callbacks must apply neither: default count omits row modifiers, ordering, and pagination. Cardinality-changing row modifiers require a matching custom count.
 - Relation behavior comes from `sqlh` tags. Do not add public query-builder hooks without a demonstrated requirement.
 
 ## Struct tags

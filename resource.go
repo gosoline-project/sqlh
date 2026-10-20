@@ -3,6 +3,7 @@ package sqlh
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
@@ -16,9 +17,10 @@ import (
 // parsed schema and tag-derived builders, but receive input and a transaction
 // for each request. It owns no request state and does not close the SQL client.
 type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
-	repository sqlr.RepositoryTx[K, E]
-	schema     *sqlr.EntitySchema
-	tags       *entityBuilderTags
+	repository  sqlr.RepositoryTx[K, E]
+	schema      *sqlr.EntitySchema
+	tags        *entityBuilderTags
+	queryFields *queryFieldResolver
 
 	builderCreate      func(*sqlr.QueryBuilderCreate)
 	builderRead        func(*sqlr.QueryBuilderSelect)
@@ -33,6 +35,7 @@ type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	repository sqlr.RepositoryTx[K, E],
 	schema *sqlr.EntitySchema,
+	configuredQueryFields map[string]string,
 ) (*resource[K, E], error) {
 	if repository == nil {
 		return nil, fmt.Errorf("transaction repository is required")
@@ -50,10 +53,16 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	patchAutoSyncPaths = append(patchAutoSyncPaths, schema.AutoSyncMany2manyPaths()...)
 	patchAutoSyncPaths = uniqueSortedStrings(patchAutoSyncPaths)
 
+	queryFields, err := newQueryFieldResolver(reflect.TypeFor[E](), schema, configuredQueryFields)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve query fields: %w", err)
+	}
+
 	return &resource[K, E]{
 		repository:         repository,
 		schema:             schema,
 		tags:               tags,
+		queryFields:        queryFields,
 		builderCreate:      builderCreateFromTags(tags),
 		builderRead:        builderLookupFromTags(tags),
 		builderQuery:       builderQueryFromTags(tags),
@@ -334,10 +343,8 @@ func (r *resource[K, E]) buildListOperation[LI ListInputSource, O any](
 	}, nil
 }
 
-// Query and count share one plan for entity and request scope. The default
-// count applies builder, scope, and query modifiers, but not pagination, so
-// Total remains independent of the page. Custom callbacks receive the same
-// plan and must preserve this split.
+// Query and count share entity, public-filter, and trusted request scope.
+// Only row queries apply ordering and pagination.
 func (r *resource[K, E]) list[LI ListInputSource, O any](
 	ctx context.Context,
 	tx sqlr.TTx,
@@ -357,20 +364,25 @@ func (r *resource[K, E]) list[LI ListInputSource, O any](
 	if err := value.ValidateQueryModifiers(); err != nil {
 		return ListOutput[O]{}, err
 	}
+	resolved, err := r.queryFields.resolve(value.GetFilter(), value.GetOrderBy())
+	if err != nil {
+		return ListOutput[O]{}, err
+	}
+	trustedFilters, trustedModifiers := trustedListPhases(input, value)
 
 	plan := QueryPlan{
 		ApplyBuilder: composeBuilders(r.builderQuery),
 		ApplyScope: composeScopes(
 			deleteScope(visibility),
 			forceScope(value),
-			value.ApplyFilters,
+			resolved.applyFilters,
+			trustedFilters,
 		),
-		ApplyQueryModifiers: value.ApplyQueryModifiers,
+		ApplyQueryModifiers: composeBuilders(trustedModifiers, resolved.applyOrder),
 		ApplyPagination:     value.ApplyPagination,
 	}
 
 	var entities []E
-	var err error
 	if query != nil {
 		entities, err = query(ctx, tx, r.repository, input, plan)
 	} else {
@@ -433,7 +445,6 @@ func (r *resource[K, E]) count(tx sqlr.TTx, plan QueryPlan) (int, error) {
 	if err := plan.ApplyScope(qb); err != nil {
 		return 0, err
 	}
-	plan.ApplyQueryModifiers(qb)
 
 	return r.repository.Count(tx, qb)
 }
@@ -549,4 +560,29 @@ func forceScope(source ForceFilterSource) QueryScope {
 
 		return nil
 	}
+}
+
+type trustedListFilters interface {
+	ApplyFilters(*sqlr.QueryBuilderSelect) error
+}
+
+type trustedListModifiers interface {
+	ApplyQueryModifiers(*sqlr.QueryBuilderSelect)
+}
+
+// Prefer the supplied pointer so pointer-receiver scopes cannot be lost.
+// The value fallback also supports LI itself being a pointer type.
+func trustedListPhases(pointer, value any) (filters QueryScope, modifiers func(*sqlr.QueryBuilderSelect)) {
+	if source, ok := pointer.(trustedListFilters); ok {
+		filters = source.ApplyFilters
+	} else if source, ok := value.(trustedListFilters); ok {
+		filters = source.ApplyFilters
+	}
+	if source, ok := pointer.(trustedListModifiers); ok {
+		modifiers = source.ApplyQueryModifiers
+	} else if source, ok := value.(trustedListModifiers); ok {
+		modifiers = source.ApplyQueryModifiers
+	}
+
+	return filters, modifiers
 }
