@@ -1,6 +1,8 @@
 package sqlh
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 
 	"github.com/gosoline-project/sqlc"
@@ -41,59 +43,94 @@ type ListPage struct {
 	Offset int `json:"offset,omitempty"`
 }
 
-// ListInput is the standard SQLH list input. Applications can embed it in a
-// domain-specific input to retain the predefined filter, ordering, page, and
-// force-filter behavior.
-type ListInput struct {
-	ForceFilters
-
-	Filter  sqlc.JsonFilter  `json:"filter"`
-	OrderBy []sqlc.JsonOrder `json:"orderBy,omitempty"`
-	Page    ListPage         `json:"page,omitempty"`
+// JsonFilter describes a public field filter using SQLC's existing operators.
+// Field is an API name resolved by the resource, never a database identifier.
+type JsonFilter struct {
+	Type   sqlc.JsonFilterType `json:"type"`
+	Field  string              `json:"field,omitempty"`
+	Value  any                 `json:"value,omitempty"`
+	Values []any               `json:"values,omitempty"`
+	From   any                 `json:"from,omitempty"`
+	To     any                 `json:"to,omitempty"`
+	Fields []JsonFilter        `json:"fields,omitempty"`
 }
 
-// ApplyFilters applies the user filter. SQLH applies force filters separately
-// through QueryPlan.ApplyScope.
-func (i ListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
-	if qb == nil {
-		return fmt.Errorf("query builder is nil")
+// JsonOrder orders a public field. An omitted direction means ascending.
+type JsonOrder struct {
+	Field     string `json:"field"`
+	Direction string `json:"direction,omitempty"`
+}
+
+// No node in the wire tree implements UnmarshalJSON, so encoding/json decodes
+// and validates the complete tree once rather than reparsing every subtree.
+type jsonFilterWire struct {
+	Type   sqlc.JsonFilterType `json:"type"`
+	Field  string              `json:"field,omitempty"`
+	Value  any                 `json:"value,omitempty"`
+	Values []any               `json:"values,omitempty"`
+	From   any                 `json:"from,omitempty"`
+	To     any                 `json:"to,omitempty"`
+	Fields []jsonFilterWire    `json:"fields,omitempty"`
+}
+
+func (f jsonFilterWire) publicFilter() JsonFilter {
+	result := JsonFilter{Type: f.Type, Field: f.Field, Value: f.Value, Values: f.Values, From: f.From, To: f.To}
+	if f.Fields != nil {
+		result.Fields = make([]JsonFilter, len(f.Fields))
+		for i := range f.Fields {
+			result.Fields[i] = f.Fields[i].publicFilter()
+		}
 	}
 
-	expression, err := i.Filter.ToExpression()
-	if err != nil {
-		return fmt.Errorf("failed to convert list filter: %w", err)
+	return result
+}
+
+// UnmarshalJSON rejects obsolete raw-column and unknown filter dialects.
+func (f *JsonFilter) UnmarshalJSON(data []byte) error {
+	var value jsonFilterWire
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
 	}
-	if expression != nil {
-		qb.Where(expression)
-	}
+	*f = value.publicFilter()
 
 	return nil
 }
 
-// ApplyQueryModifiers applies row-only query modifiers such as grouping and ordering.
-// If a modifier changes row cardinality, the CRUD definition must provide a matching Count callback.
-// Call ValidateQueryModifiers before applying caller-supplied ordering directly.
-func (i ListInput) ApplyQueryModifiers(qb *sqlr.QueryBuilderSelect) {
-	if qb == nil || len(i.OrderBy) == 0 {
-		return
+// UnmarshalJSON rejects obsolete raw-column ordering.
+func (o *JsonOrder) UnmarshalJSON(data []byte) error {
+	type wireOrder JsonOrder
+	var value wireOrder
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
 	}
+	*o = JsonOrder(value)
 
-	order := make([]any, 0, len(i.OrderBy))
-	for _, key := range i.OrderBy {
-		expression, err := key.ToExpression()
-		if err != nil {
-			return
-		}
-		order = append(order, expression)
-	}
-	qb.OrderBy(order...)
+	return nil
 }
 
-// ValidateQueryModifiers rejects malformed ordering before any list query runs.
-// Applications may override it to additionally restrict sortable columns.
+// ListInput is the standard public-field list request.
+type ListInput struct {
+	ForceFilters
+	Filter  JsonFilter  `json:"filter"`
+	OrderBy []JsonOrder `json:"orderBy,omitempty"`
+	Page    ListPage    `json:"page,omitempty"`
+}
+
+// GetFilter returns the public request filter.
+func (i ListInput) GetFilter() JsonFilter { return i.Filter }
+
+// GetOrderBy returns the public request ordering.
+func (i ListInput) GetOrderBy() []JsonOrder { return i.OrderBy }
+
+// ValidateQueryModifiers validates ordering syntax; resource resolution also
+// validates every public field before invoking query or count callbacks.
 func (i ListInput) ValidateQueryModifiers() error {
 	for index, key := range i.OrderBy {
-		if _, err := key.ToExpression(); err != nil {
+		if _, err := (sqlc.JsonOrder{Column: "field", Direction: key.Direction}).ToExpression(); err != nil {
 			return validation.NewError(fmt.Errorf("orderBy[%d]: %w", index, err))
 		}
 	}
@@ -132,8 +169,8 @@ func (i ListInput) ValidatePagination() error {
 // ListInputSource is the minimal contract required by a typed list operation.
 type ListInputSource interface {
 	ForceFilterSource
-	ApplyFilters(*sqlr.QueryBuilderSelect) error
-	ApplyQueryModifiers(*sqlr.QueryBuilderSelect)
+	GetFilter() JsonFilter
+	GetOrderBy() []JsonOrder
 	ApplyPagination(*sqlr.QueryBuilderSelect)
 	ValidatePagination() error
 	ValidateQueryModifiers() error
