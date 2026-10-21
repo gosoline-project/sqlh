@@ -259,7 +259,7 @@ func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 		transformer.TransformOutput,
 	)
 	definition.DeleteOutput = definition.Output
-	definition.QueryFields = map[string]string{
+	definition.FieldMappings = map[string]string{
 		"id": "Id", "title": "Title", "status": "Status",
 		"author.name": "Author.Name",
 	}

@@ -42,7 +42,7 @@ func NewUserCrud() httpserver.RegisterFactoryFunc {
 		transformer.TransformPatchInputFromEntity,
 		transformer.TransformOutput,
 	)
-	definition.QueryFields = map[string]string{"id": "Id", "name": "Name", "created_at": "CreatedAt", "updated_at": "UpdatedAt"}
+	definition.FieldMappings = map[string]string{"id": "Id", "name": "Name", "created_at": "CreatedAt", "updated_at": "UpdatedAt"}
 
 	return sqlh.WithCrudHandlers(0, "user", sqlh.SimpleCrudDefinition(definition))
 }

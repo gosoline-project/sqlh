@@ -61,7 +61,7 @@
 // count paths share user filters, force filters, and soft-delete scope. Count
 // omits row-only modifiers, ordering, and pagination.
 //
-// CrudDefinition.QueryFields maps public names to entity Go field paths. A
+// CrudDefinition.FieldMappings maps public names to entity Go field paths. A
 // non-nil map is the complete allowlist, not an addition to automatic fields;
 // an empty map exposes no public query fields. A nil map derives public names
 // from scalar entity JSON fields backed by SQLR database metadata. Hidden JSON
