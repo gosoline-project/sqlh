@@ -93,9 +93,9 @@ func (s *CrudIntegrationTestSuite) TestQueryPostPreloadsAssociations(app suite.A
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]any{
 			"filter": map[string]any{
-				"type":   "eq",
-				"column": "title",
-				"value":  "Advanced Go Patterns",
+				"type":  "eq",
+				"field": "title",
+				"value": "Advanced Go Patterns",
 			},
 		}).
 		SetResult(&output).
@@ -133,7 +133,7 @@ func (s *CrudIntegrationTestSuite) TestQueryPostNativeOrderingBeforePagination(a
 	var output sqlh.ListOutput[PostOutput]
 	response, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetBody(`{"orderBy":[{"column":"posts.status","direction":"desc"},{"column":"posts.id","direction":"desc"}],"page":{"limit":1,"offset":1}}`).
+		SetBody(`{"orderBy":[{"field":"status","direction":"desc"},{"field":"id","direction":"desc"}],"page":{"limit":1,"offset":1}}`).
 		SetResult(&output).
 		Execute(http.MethodPost, "/v1/posts")
 	if err != nil {
@@ -155,13 +155,35 @@ func (s *CrudIntegrationTestSuite) TestQueryPostNativeOrderingBeforePagination(a
 	return nil
 }
 
+func (s *CrudIntegrationTestSuite) TestQueryPublicRelationFilterAndCount(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+	var output sqlh.ListOutput[PostOutput]
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(`{"filter":{"type":"and","fields":[{"type":"eq","field":"author.name","value":"Alice Johnson"},{"type":"eq","field":"status","value":"published"}]},"orderBy":[{"field":"author.name"},{"field":"id","direction":"desc"}],"page":{"limit":1}}`).
+		SetResult(&output).
+		Execute(http.MethodPost, "/v1/posts")
+	if err != nil {
+		return err
+	}
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal(2, output.Total)
+	if s.Len(output.Results, 1) {
+		s.Equal(int64(2), output.Results[0].Id)
+		s.Equal("Advanced Go Patterns", output.Results[0].Title)
+	}
+
+	return nil
+}
+
 func (s *CrudIntegrationTestSuite) TestQueryPostRejectsInvalidOrdering(app suite.AppUnderTest, client *resty.Client) error {
 	defer app.WaitDone()
 	defer app.Stop()
 
 	for _, body := range []string{
-		`{"orderBy":[{"column":"posts.id","direction":"invalid"}]}`,
-		`{"orderBy":[{"column":"LOWER(title)","direction":"asc"}]}`,
+		`{"orderBy":[{"field":"id","direction":"invalid"}]}`,
+		`{"orderBy":[{"field":"LOWER(title)","direction":"asc"}]}`,
 	} {
 		response, err := client.R().
 			SetHeader("Content-Type", "application/json").

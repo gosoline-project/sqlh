@@ -16,7 +16,7 @@ import (
 
 type resourceTestEntity struct {
 	sqlr.Entity[int]
-	Name string `db:"name"`
+	Name string `db:"name" json:"name"`
 }
 
 type resourceTestUpdateInput struct {
@@ -45,7 +45,7 @@ func TestResourceValidatesCustomInputAndPointerInput(t *testing.T) {
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
-	resource, err := newResource(repository, schema)
+	resource, err := newResource(repository, schema, nil)
 	require.NoError(t, err)
 	validationErr := errors.New("column is not sortable")
 	input := resourceTestValidatedListInput{validationErr: validationErr}
@@ -66,6 +66,14 @@ func TestResourceValidatesCustomInputAndPointerInput(t *testing.T) {
 type resourceTestListInput struct {
 	ForceFilters
 	Page ListPage
+}
+
+func (resourceTestListInput) GetFilter() JsonFilter {
+	return JsonFilter{}
+}
+
+func (resourceTestListInput) GetOrderBy() []JsonOrder {
+	return nil
 }
 
 func (resourceTestListInput) ApplyFilters(*sqlr.QueryBuilderSelect) error {
@@ -93,6 +101,74 @@ func (resourceTestListInput) ValidateQueryModifiers() error {
 	return nil
 }
 
+type resourceTestPointerListInput struct {
+	ListInput
+	filterCalls   int
+	modifierCalls int
+}
+
+func (i *resourceTestPointerListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
+	i.filterCalls++
+	qb.Where("account_id = ?", 42)
+
+	return nil
+}
+
+func (i *resourceTestPointerListInput) ApplyQueryModifiers(qb *sqlr.QueryBuilderSelect) {
+	i.modifierCalls++
+	qb.OrderBy("name")
+}
+
+func TestResourceListAppliesPointerReceiverTrustedPhases(t *testing.T) {
+	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
+	schema, err := sqlr.ParseSchema[resourceTestEntity]()
+	require.NoError(t, err)
+	resource, err := newResource(repository, schema, nil)
+	require.NoError(t, err)
+	input := resourceTestPointerListInput{
+		ListInput: ListInput{Page: ListPage{Limit: 2, Offset: 1}},
+	}
+	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]resourceTestEntity, error) {
+		qb := sqlr.NewQueryBuilderSelect()
+		for _, option := range options {
+			option(qb)
+		}
+
+		query, params, err := qb.ToSql()
+		require.NoError(t, err)
+		require.Contains(t, query, "account_id = ?")
+		require.Contains(t, query, "ORDER BY `name`")
+		require.Contains(t, query, "LIMIT 2")
+		require.Contains(t, query, "OFFSET 1")
+		require.Equal(t, []any{42}, params)
+
+		return []resourceTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
+	}).Once()
+	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
+		query, params, err := qb.ToSql()
+		require.NoError(t, err)
+		require.Contains(t, query, "account_id = ?")
+		require.NotContains(t, query, "ORDER BY")
+		require.NotContains(t, query, "LIMIT")
+		require.NotContains(t, query, "OFFSET")
+		require.Equal(t, []any{42}, params)
+
+		return 3, nil
+	}).Once()
+
+	output, err := resource.list(context.Background(), sqlr.TTx{}, &input, nil, nil, nil,
+		func(_ context.Context, entity *resourceTestEntity) (resourceTestOutput, error) {
+			return resourceTestOutput{Id: entity.Id, Name: entity.Name}, nil
+		})
+	require.NoError(t, err)
+	require.Equal(t, ListOutput[resourceTestOutput]{
+		Results: []resourceTestOutput{{Id: 1, Name: "first"}},
+		Total:   3,
+	}, output)
+	require.Equal(t, 2, input.filterCalls)
+	require.Equal(t, 1, input.modifierCalls)
+}
+
 func TestNewCrudHandlerRejectsMismatchedIdentityAndKeyTypes(t *testing.T) {
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
@@ -107,11 +183,11 @@ func TestNewCrudHandlerRejectsMismatchedIdentityAndKeyTypes(t *testing.T) {
 	require.EqualError(t, err, "CRUD identity lookup is required when input ID type string differs from entity key type int")
 }
 
-func TestResourceDefaultCountAppliesQueryModifiers(t *testing.T) {
+func TestResourceDefaultCountOmitsRowModifiers(t *testing.T) {
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
-	resource, err := newResource(repository, schema)
+	resource, err := newResource(repository, schema, nil)
 	require.NoError(t, err)
 
 	repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]resourceTestEntity, error) {
@@ -132,8 +208,8 @@ func TestResourceDefaultCountAppliesQueryModifiers(t *testing.T) {
 	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
 		query, _, err := qb.ToSql()
 		require.NoError(t, err)
-		require.Contains(t, query, "GROUP BY `name`")
-		require.Contains(t, query, "ORDER BY `name`")
+		require.NotContains(t, query, "GROUP BY")
+		require.NotContains(t, query, "ORDER BY")
 		require.NotContains(t, query, "LIMIT")
 		require.NotContains(t, query, "OFFSET")
 
@@ -158,17 +234,17 @@ func TestResourceDefaultCountAppliesQueryModifiers(t *testing.T) {
 	}, output)
 }
 
-func TestResourceNativeOrderingWithDefaultAndCustomCallbacks(t *testing.T) {
+func TestResourcePublicOrderingWithDefaultAndCustomCallbacks(t *testing.T) {
 	for _, custom := range []bool{false, true} {
 		t.Run(fmt.Sprintf("custom=%t", custom), func(t *testing.T) {
 			repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 			schema, err := sqlr.ParseSchema[resourceTestEntity]()
 			require.NoError(t, err)
-			resource, err := newResource(repository, schema)
+			resource, err := newResource(repository, schema, map[string]string{"id": "Id", "name": "Name"})
 			require.NoError(t, err)
 			input := ListInput{
-				Filter:  sqlc.JsonFilter{Type: sqlc.JsonFilterEq, Column: "name", Value: "first"},
-				OrderBy: []sqlc.JsonOrder{{Column: "name", Direction: "desc"}, {Column: "id"}},
+				Filter:  JsonFilter{Type: sqlc.JsonFilterEq, Field: "name", Value: "first"},
+				OrderBy: []JsonOrder{{Field: "name", Direction: "desc"}, {Field: "id"}},
 				Page:    ListPage{Limit: 2, Offset: 1},
 			}
 			repository.EXPECT().Query(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, options ...func(*sqlr.QueryBuilderSelect)) ([]resourceTestEntity, error) {
@@ -177,7 +253,7 @@ func TestResourceNativeOrderingWithDefaultAndCustomCallbacks(t *testing.T) {
 				options[0](qb)
 				query, params, err := qb.ToSql()
 				require.NoError(t, err)
-				require.Equal(t, "WHERE `name` = ? ORDER BY `name` DESC, `id` ASC LIMIT 2 OFFSET 1", query)
+				require.Equal(t, "WHERE `"+schema.TableName+"`.`name` = ? ORDER BY `"+schema.TableName+"`.`name` DESC, `"+schema.TableName+"`.`id` ASC LIMIT 2 OFFSET 1", query)
 				require.Equal(t, []any{"first"}, params)
 
 				return []resourceTestEntity{{Entity: sqlr.Entity[int]{Id: 1}, Name: "first"}}, nil
@@ -185,11 +261,7 @@ func TestResourceNativeOrderingWithDefaultAndCustomCallbacks(t *testing.T) {
 			repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
 				query, params, err := qb.ToSql()
 				require.NoError(t, err)
-				expected := "WHERE `name` = ?"
-				if !custom {
-					expected += " ORDER BY `name` DESC, `id` ASC"
-				}
-				require.Equal(t, expected, query)
+				require.Equal(t, "WHERE `"+schema.TableName+"`.`name` = ?", query)
 				require.Equal(t, []any{"first"}, params)
 
 				return 3, nil
@@ -232,7 +304,7 @@ func TestResourcePatchEmptyDocumentReturnsCurrentEntityWithoutUpdate(t *testing.
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
-	resource, err := newResource(repository, schema)
+	resource, err := newResource(repository, schema, nil)
 	require.NoError(t, err)
 
 	current := resourceTestEntity{Entity: sqlr.Entity[int]{Id: 7}, Name: "current"}
@@ -274,7 +346,7 @@ func TestResourceDeleteLookupLocksBeforeDelete(t *testing.T) {
 	repository := sqlrmocks.NewRepositoryTx[int, resourceTestEntity](t)
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
-	resource, err := newResource(repository, schema)
+	resource, err := newResource(repository, schema, nil)
 	require.NoError(t, err)
 
 	entity := resourceTestEntity{Entity: sqlr.Entity[int]{Id: 7}, Name: "current"}

@@ -124,6 +124,13 @@ type CrudDefinition[
 	// Output maps one persisted entity to the public response value.
 	Output func(context.Context, *E) (O, error)
 
+	// FieldMappings is the complete allowlist of public query names mapped to Go
+	// entity field paths. Nil discovers visible exported persisted Go scalars,
+	// with sqlh field aliases/exclusions; binding tags are ignored. An empty
+	// nonnil map permits no fields. Names use Unicode case-insensitive lookup.
+	// Direct to-one paths are supported; Go paths remain case-sensitive.
+	FieldMappings map[string]string
+
 	// PatchAssociations maps JSON Merge Patch association paths to SQLR relation
 	// paths. When it is empty, SQLH derives JSON paths from the complete update
 	// input's json tags and the entity relation names. Only paths also configured
@@ -325,7 +332,7 @@ func newCrudHandler[
 		)
 	}
 
-	res, err := newResource(repository, schema)
+	res, err := newResource(repository, schema, definition.FieldMappings)
 	if err != nil {
 		return nil, err
 	}

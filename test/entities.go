@@ -259,6 +259,10 @@ func NewPostCrud() gosolinehttpserver.RegisterFactoryFunc {
 		transformer.TransformOutput,
 	)
 	definition.DeleteOutput = definition.Output
+	definition.FieldMappings = map[string]string{
+		"id": "Id", "title": "Title", "status": "Status",
+		"author.name": "Author.Name",
+	}
 
 	return sqlh.WithCrudHandlers(1, "post", sqlh.SimpleCrudDefinition(definition))
 }
