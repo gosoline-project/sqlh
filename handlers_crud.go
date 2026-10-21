@@ -125,8 +125,10 @@ type CrudDefinition[
 	Output func(context.Context, *E) (O, error)
 
 	// FieldMappings is the complete allowlist of public query names mapped to Go
-	// entity field paths. Nil derives directly mapped scalar JSON fields; an
-	// empty nonnil map permits no fields. Direct to-one paths are supported.
+	// entity field paths. Nil discovers visible exported persisted Go scalars,
+	// with sqlh field aliases/exclusions; binding tags are ignored. An empty
+	// nonnil map permits no fields. Names use Unicode case-insensitive lookup.
+	// Direct to-one paths are supported; Go paths remain case-sensitive.
 	FieldMappings map[string]string
 
 	// PatchAssociations maps JSON Merge Patch association paths to SQLR relation

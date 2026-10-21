@@ -19,8 +19,8 @@ type queryContractApp struct {
 type queryContractEntity struct {
 	sqlr.Entity[int]
 	PublicId  string             `db:"public_id" json:"id"`
-	StartDate string             `db:"start_date" json:"startDate"`
-	Secret    string             `db:"secret" json:"-"`
+	StartDate string             `db:"start_date" json:"startDate" sqlh:"field:startDate"`
+	Secret    string             `db:"secret" json:"-" sqlh:"field:-"`
 	AppId     *int               `db:"app_id" json:"appId"`
 	App       queryContractApp   `db:"-" json:"app" sqlr:"belongsTo:app_id"`
 	Apps      []queryContractApp `db:"-" json:"apps" sqlr:"foreignKey:app_id"`
@@ -58,7 +58,7 @@ func TestPublicQueryFieldContract(t *testing.T) {
 
 func TestPublicQueryFieldsRejectIdentifiersAndMalformedTrees(t *testing.T) {
 	resolver := queryContractResolver(t, map[string]string{"id": "PublicId"})
-	for _, field := range []string{"Id", "public_id", "query_contract_entities.public_id", "`public_id`) OR 1=1 --", "id desc", ""} {
+	for _, field := range []string{"public_id", "query_contract_entities.public_id", "`public_id`) OR 1=1 --", "id desc", ""} {
 		_, err := resolver.resolve(JsonFilter{Type: "eq", Field: field, Value: 1}, nil)
 		require.Error(t, err, field)
 		require.True(t, validation.IsValidationError(err))
@@ -78,7 +78,8 @@ func TestPublicQueryFieldsRejectIdentifiersAndMalformedTrees(t *testing.T) {
 func TestPublicQueryFieldsAutomaticAndExplicitAllowlist(t *testing.T) {
 	automatic := queryContractResolver(t, nil)
 	require.Contains(t, automatic.fields, "id")
-	require.Contains(t, automatic.fields, "startDate")
+	require.Contains(t, automatic.fields, "startdate")
+	require.Contains(t, automatic.fields, "publicid")
 	require.NotContains(t, automatic.fields, "Secret")
 	require.NotContains(t, automatic.fields, "secret")
 	require.NotContains(t, automatic.fields, "app.name")
@@ -127,10 +128,10 @@ func TestPublicQueryRejectsObsoleteJSONDialects(t *testing.T) {
 
 type queryContractHyphenEntity struct {
 	sqlr.Entity[int]
-	Name string `db:"display_name" json:"display-name"`
+	Name string `db:"display_name" json:"display-name" sqlh:"field:display-name"`
 }
 
-func TestPublicQueryFieldsAcceptJSONNamesWithoutSQLFallback(t *testing.T) {
+func TestPublicQueryFieldsAcceptPublicAliasesWithoutSQLFallback(t *testing.T) {
 	schema, err := sqlr.ParseSchema[queryContractHyphenEntity]()
 	require.NoError(t, err)
 	for _, configured := range []map[string]string{nil, {"display-name": "Name"}} {

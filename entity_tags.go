@@ -9,7 +9,10 @@ import (
 	"github.com/gosoline-project/sqlr"
 )
 
-const sqlhTagName = "sqlh"
+const (
+	sqlhTagName        = "sqlh"
+	sqlhFieldDirective = "field"
+)
 
 type entityBuilderTags struct {
 	createPreloadPaths []string
@@ -24,6 +27,7 @@ type entityBuilderTags struct {
 type sqlhTagDirective struct {
 	name   string
 	phases []string
+	value  string
 }
 
 func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
@@ -82,14 +86,35 @@ func collectEntityBuilderTagField(field reflect.StructField, schema *sqlr.Entity
 		return collectEmbeddedEntityBuilderTags(field, schema, parentPath, fieldPath, tags, visitedTypes, tagValue)
 	}
 
-	if err := validateRelationTagUsage(schema, field.Name, relationPath, tagValue); err != nil {
+	directives, err := parseSqlhTagValues(tagValue, relationPath)
+	if err != nil {
 		return err
 	}
+	for _, directive := range directives {
+		if directive.name == sqlhFieldDirective {
+			if !field.IsExported() || !queryScalar(field.Type) {
+				return fmt.Errorf("field %s: sqlh field directive requires an exported scalar field", relationPath)
+			}
 
-	if tagValue != "" {
-		if err := applySqlhTagValues(tagValue, relationPath, tags); err != nil {
+			continue
+		}
+		// A promoted association with the same name may remain in SQLR's
+		// metadata even when this physical field is a shadowing scalar.
+		if queryScalar(field.Type) {
+			return fmt.Errorf("field %s: %s tag requires an association field", relationPath, sqlhTagName)
+		}
+		if err := validateRelationTagUsage(schema, field.Name, relationPath, tagValue); err != nil {
 			return err
 		}
+		for _, phase := range directive.phases {
+			if err := applySqlhTagPhase(directive.name, phase, relationPath, tags); err != nil {
+				return err
+			}
+		}
+	}
+
+	if queryScalar(field.Type) {
+		return nil
 	}
 
 	return collectRelatedEntityBuilderTags(schema, field.Name, fieldPath, relationPath, tags, visitedTypes)
@@ -138,27 +163,31 @@ func collectRelatedEntityBuilderTags(schema *sqlr.EntitySchema, fieldName string
 	})
 }
 
-func applySqlhTagValues(tagValue string, relationPath string, tags *entityBuilderTags) error {
-	directives := strings.Split(tagValue, ";")
-	for _, rawDirective := range directives {
-		directive := strings.TrimSpace(rawDirective)
+func parseSqlhTagValues(tagValue, fieldPath string) ([]*sqlhTagDirective, error) {
+	if tagValue == "" {
+		return nil, nil
+	}
+	var result []*sqlhTagDirective
+	fieldSeen := false
+	for _, raw := range strings.Split(tagValue, ";") {
+		directive := strings.TrimSpace(raw)
 		if directive == "" {
-			return fmt.Errorf("field %s: %s tag contains an empty directive", relationPath, sqlhTagName)
+			return nil, fmt.Errorf("field %s: %s tag contains an empty directive", fieldPath, sqlhTagName)
 		}
-
-		parsedDirective, err := parseSqlhTagDirective(directive, relationPath)
+		parsed, err := parseSqlhTagDirective(directive, fieldPath)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		for _, phase := range parsedDirective.phases {
-			if err := applySqlhTagPhase(parsedDirective.name, phase, relationPath, tags); err != nil {
-				return err
+		if parsed.name == sqlhFieldDirective {
+			if fieldSeen {
+				return nil, fmt.Errorf("field %s: duplicate sqlh field directive", fieldPath)
 			}
+			fieldSeen = true
 		}
+		result = append(result, parsed)
 	}
 
-	return nil
+	return result, nil
 }
 
 func parseSqlhTagDirective(directive string, relationPath string) (*sqlhTagDirective, error) {
@@ -173,6 +202,13 @@ func parseSqlhTagDirective(directive string, relationPath string) (*sqlhTagDirec
 		return nil, fmt.Errorf("field %s: invalid %s tag directive %q", relationPath, sqlhTagName, directive)
 	}
 
+	if name == sqlhFieldDirective {
+		if valuesRaw == "" {
+			return nil, fmt.Errorf("field %s: sqlh field directive requires a name or -", relationPath)
+		}
+
+		return &sqlhTagDirective{name: name, value: valuesRaw}, nil
+	}
 	if valuesRaw == "" {
 		return nil, fmt.Errorf("field %s: %s directive %q requires at least one phase", relationPath, sqlhTagName, name)
 	}

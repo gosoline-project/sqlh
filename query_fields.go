@@ -2,11 +2,13 @@ package sqlh
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gosoline-project/sqlc"
 	"github.com/gosoline-project/sqlr"
@@ -39,12 +41,16 @@ func newQueryFieldResolver(entity reflect.Type, schema *sqlr.EntitySchema, confi
 	}
 
 	resolver := &queryFieldResolver{fields: make(map[string]queryField)}
-	for public, path := range configured {
+	origins := make(map[string]string)
+	for _, public := range slices.Sorted(maps.Keys(configured)) {
+		path := configured[public]
 		field, err := resolveQueryGoPath(entity, schema, path)
 		if err != nil {
 			return nil, fmt.Errorf("query field %q: %w", public, err)
 		}
-		resolver.fields[public] = field
+		if err := resolver.add(public, path, field, origins); err != nil {
+			return nil, err
+		}
 	}
 
 	return resolver, nil
@@ -52,24 +58,114 @@ func newQueryFieldResolver(entity reflect.Type, schema *sqlr.EntitySchema, confi
 
 func newAutomaticQueryFieldResolver(entity reflect.Type, schema *sqlr.EntitySchema) (*queryFieldResolver, error) {
 	resolver := &queryFieldResolver{fields: make(map[string]queryField)}
-	for name, index := range queryJSONFields(entity) {
-		if !queryScalar(entity.FieldByIndex(index).Type) {
+	origins := make(map[string]string)
+	// Go visibility is resolved before aliases: hidden and ambiguous promoted
+	// names do not participate, but aliases never silently shadow another field.
+	for _, member := range reflect.VisibleFields(entity) {
+		if !member.IsExported() || !queryScalar(member.Type) {
 			continue
 		}
-		for _, column := range schema.Columns {
-			if !slices.Equal(index, column.FieldIndex) {
-				continue
-			}
-
-			field, err := queryMappedField(schema.TableName, column.Name, "")
-			if err != nil {
-				return nil, err
-			}
-			resolver.fields[name] = field
+		column, ok := queryColumnAtIndex(schema, member.Index)
+		if !ok {
+			continue
+		}
+		name, err := automaticQueryFieldName(member)
+		if err != nil {
+			return nil, err
+		}
+		if name == "-" {
+			continue
+		}
+		field, err := queryMappedField(schema.TableName, column, "")
+		if err != nil {
+			return nil, err
+		}
+		if err := resolver.add(name, queryFieldPath(entity, member.Index), field, origins); err != nil {
+			return nil, err
 		}
 	}
 
 	return resolver, nil
+}
+
+func queryColumnAtIndex(schema *sqlr.EntitySchema, index []int) (string, bool) {
+	for _, column := range schema.Columns {
+		if slices.Equal(index, column.FieldIndex) {
+			return column.Name, true
+		}
+	}
+
+	return "", false
+}
+
+func automaticQueryFieldName(field reflect.StructField) (string, error) {
+	directives, err := parseSqlhTagValues(strings.TrimSpace(field.Tag.Get(sqlhTagName)), field.Name)
+	if err != nil {
+		return "", err
+	}
+	for _, directive := range directives {
+		if directive.name == sqlhFieldDirective {
+			return directive.value, nil
+		}
+	}
+
+	return field.Name, nil
+}
+
+func queryFieldPath(t reflect.Type, index []int) string {
+	parts := make([]string, 0, len(index))
+	for _, i := range index {
+		field := t.Field(i)
+		parts = append(parts, field.Name)
+		t = indirectQueryType(field.Type)
+	}
+
+	return strings.Join(parts, ".")
+}
+
+func (r *queryFieldResolver) add(name, path string, field queryField, origins map[string]string) error {
+	key := foldQueryFieldName(name)
+	description := fmt.Sprintf("%q (%s)", name, path)
+	if previous, exists := origins[key]; exists {
+		entries := []string{previous, description}
+		slices.Sort(entries)
+
+		return fmt.Errorf("ambiguous query fields %s and %s: names are case-insensitively equivalent", entries[0], entries[1])
+	}
+	origins[key] = description
+	r.fields[key] = field
+
+	return nil
+}
+
+// foldQueryFieldName chooses a representative from each Unicode SimpleFold
+// cycle, exactly matching strings.EqualFold rather than Unicode lowercasing.
+func foldQueryFieldName(name string) string {
+	asciiLower := true
+	for i := range len(name) {
+		if name[i] >= 128 || name[i] >= 'A' && name[i] <= 'Z' {
+			asciiLower = false
+
+			break
+		}
+	}
+	if asciiLower {
+		return name
+	}
+
+	return strings.Map(func(r rune) rune {
+		minimum := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < minimum {
+				minimum = next
+			}
+		}
+		if minimum >= 'A' && minimum <= 'Z' {
+			return minimum + ('a' - 'A')
+		}
+
+		return minimum
+	}, name)
 }
 
 func indirectQueryType(t reflect.Type) reflect.Type {
@@ -107,8 +203,11 @@ func resolveQueryGoPath(entity reflect.Type, schema *sqlr.EntitySchema, path str
 	}
 
 	parts := strings.Split(path, ".")
-	if _, ok := schema.Relationships[parts[0]]; ok {
-		return resolveQueryRelationPath(schema, path, parts)
+	if relation, ok := schema.Relationships[parts[0]]; ok {
+		member, visible := entity.FieldByName(parts[0])
+		if visible && slices.Equal(member.Index, relation.FieldIndex) {
+			return resolveQueryRelationPath(schema, path, parts)
+		}
 	}
 
 	return resolveQueryMappedScalar(entity, schema, parts, schema.TableName, "", path)
@@ -183,7 +282,7 @@ func (r *queryFieldResolver) resolve(filter JsonFilter, order []JsonOrder) (*res
 		return nil, validation.NewError(fmt.Errorf("filter: %w", err))
 	}
 	for i, key := range order {
-		field, ok := r.fields[key.Field]
+		field, ok := r.fields[foldQueryFieldName(key.Field)]
 		if !ok {
 			return nil, validation.NewError(fmt.Errorf("orderBy[%d]: unknown query field %q", i, key.Field))
 		}
@@ -228,7 +327,7 @@ func (r *queryFieldResolver) convertFilter(filter JsonFilter, joins *[]string) (
 		if len(filter.Fields) != 0 {
 			return converted, fmt.Errorf("leaf filter must not contain children")
 		}
-		field, ok := r.fields[filter.Field]
+		field, ok := r.fields[foldQueryFieldName(filter.Field)]
 		if !ok {
 			return converted, fmt.Errorf("unknown query field %q", filter.Field)
 		}
