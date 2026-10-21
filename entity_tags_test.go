@@ -1,6 +1,7 @@
 package sqlh
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -103,4 +104,54 @@ func TestParseEntityBuilderTags_AutoDetectedRelation(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"Child"}, tags.readPreloadPaths)
+}
+
+type scalarFieldTagsEntity struct {
+	sqlr.Entity[int64]
+	Name    string         `db:"name" sqlh:"field:display-name"`
+	Hidden  string         `db:"hidden" sqlh:"field:-"`
+	ChildId int64          `db:"child_id"`
+	Child   tagChildEntity `db:"-" sqlr:"belongsTo:child_id" sqlh:"preload:read;sync:update"`
+}
+
+func TestScalarFieldTagsPreserveAssociationPhases(t *testing.T) {
+	tags, err := parseEntityBuilderTags[scalarFieldTagsEntity]()
+	require.NoError(t, err)
+	require.Contains(t, tags.readPreloadPaths, "Child")
+	require.Contains(t, tags.updateSyncPaths, "Child")
+	require.NotContains(t, tags.readPreloadPaths, "Name")
+	require.NotContains(t, tags.updateSyncPaths, "Hidden")
+}
+
+func TestScalarFieldDirectiveValidation(t *testing.T) {
+	schema, err := sqlr.ParseSchema[tagRootEntity]()
+	require.NoError(t, err)
+	for _, test := range []struct {
+		tag     string
+		message string
+	}{
+		{"field:", "requires a name"},
+		{"field", "invalid sqlh tag directive"},
+		{"field:name;field:other", "duplicate sqlh field directive"},
+		{"field:name;", "empty directive"},
+		{"field:name;preload:read", "requires an association"},
+		{"field:name;sync:update", "requires an association"},
+	} {
+		t.Run(test.tag, func(t *testing.T) {
+			field := reflect.StructField{Name: "Name", Type: reflect.TypeFor[string](), Tag: reflect.StructTag(`sqlh:"` + test.tag + `"`)}
+			err := collectEntityBuilderTagField(field, schema, nil, &entityBuilderTags{}, map[reflect.Type]struct{}{})
+			require.ErrorContains(t, err, test.message)
+			require.ErrorContains(t, err, "Name")
+		})
+	}
+	for _, field := range []reflect.StructField{
+		{Name: "Child", Type: reflect.TypeFor[tagChildEntity](), Tag: `sqlh:"field:child"`},
+		{Name: "Values", Type: reflect.TypeFor[[]string](), Tag: `sqlh:"field:values"`},
+		{Name: "private", PkgPath: "sqlh", Type: reflect.TypeFor[string](), Tag: `sqlh:"field:private"`},
+		{Name: "Embedded", Anonymous: true, Type: reflect.TypeFor[tagChildEntity](), Tag: `sqlh:"field:embedded"`},
+	} {
+		err := collectEntityBuilderTagField(field, schema, nil, &entityBuilderTags{}, map[reflect.Type]struct{}{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), field.Name)
+	}
 }

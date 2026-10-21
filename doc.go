@@ -53,7 +53,7 @@
 // add restrictive WHERE conditions.
 //
 // [ListInput] provides public filters, orderBy keys, nested pagination, and
-// force filters. [JsonFilter] and [JsonOrder] use "field" for public JSON names,
+// force filters. [JsonFilter] and [JsonOrder] use "field" for public query names,
 // not database columns or SQL expressions. Filter operators remain the sqlc
 // JsonFilterType constants. Ordering accepts case-insensitive asc/desc directions
 // and defaults to asc; omitted ordering preserves existing builder ordering.
@@ -63,12 +63,17 @@
 //
 // CrudDefinition.FieldMappings maps public names to entity Go field paths. A
 // non-nil map is the complete allowlist, not an addition to automatic fields;
-// an empty map exposes no public query fields. A nil map derives public names
-// from scalar entity JSON fields backed by SQLR database metadata. Hidden JSON
-// fields, computed fields without persisted metadata, and relation collections
-// are not automatically exposed. Explicit paths may traverse one direct to-one
-// relation, but not collections or multi-hop relations. SQLH resolves database
-// identifiers itself and qualifies base columns with the entity table.
+// an empty map exposes no public query fields. A nil map discovers visible
+// exported Go scalar fields backed by SQLR database metadata, ignoring binding
+// tags such as json. The scalar tag sqlh:"field:alias" supplies an automatic
+// public name; sqlh:"field:-" excludes automatic exposure. Explicit mappings
+// override both defaults. Go embedding shadowing and ambiguity apply before
+// aliases. Public lookup uses Unicode case-insensitive simple folding, without
+// punctuation or naming-style normalization; active name collisions fail at
+// construction. Computed fields and relation collections are not automatically
+// exposed. Explicit paths may traverse one direct to-one relation, but not
+// collections or multi-hop relations. SQLH resolves database identifiers itself
+// and qualifies base columns with the entity table.
 //
 // Custom list inputs implement [ListInputSource], including GetFilter and
 // GetOrderBy. Public fields, operators, ordering, pagination, and
