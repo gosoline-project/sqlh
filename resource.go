@@ -35,7 +35,7 @@ type resource[K sqlr.KeyTypes, E sqlr.Entitier[K]] struct {
 func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	repository sqlr.RepositoryTx[K, E],
 	schema *sqlr.EntitySchema,
-	configuredQueryFields map[string]string,
+	configuredFieldMappings map[string]string,
 ) (*resource[K, E], error) {
 	if repository == nil {
 		return nil, fmt.Errorf("transaction repository is required")
@@ -53,7 +53,7 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 	patchAutoSyncPaths = append(patchAutoSyncPaths, schema.AutoSyncMany2manyPaths()...)
 	patchAutoSyncPaths = uniqueSortedStrings(patchAutoSyncPaths)
 
-	queryFields, err := newQueryFieldResolver(reflect.TypeFor[E](), schema, configuredQueryFields)
+	queryFields, err := newQueryFieldResolver(reflect.TypeFor[E](), schema, configuredFieldMappings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve query fields: %w", err)
 	}

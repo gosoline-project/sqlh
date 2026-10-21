@@ -89,7 +89,7 @@ func TestListInputResolvesPublicFilterWithoutPagination(t *testing.T) {
 	require.NotContains(t, query, "OFFSET")
 }
 
-func TestQueryFieldsExplicitMapIsCompleteAllowlist(t *testing.T) {
+func TestFieldMappingsExplicitMapIsCompleteAllowlist(t *testing.T) {
 	schema, err := sqlr.ParseSchema[resourceTestEntity]()
 	require.NoError(t, err)
 	resolver, err := newQueryFieldResolver(reflect.TypeFor[resourceTestEntity](), schema, map[string]string{
