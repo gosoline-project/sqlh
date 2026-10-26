@@ -4,6 +4,7 @@ package test
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	gosolinehttpserver "github.com/gosoline-project/httpserver"
@@ -22,11 +23,11 @@ type Post struct {
 
 type MutationPreloadPost struct {
 	sqlr.Entity[int64]
-	AuthorId *int64 `db:"author_id"`
-	Title    string `db:"title"`
-	Status   string `db:"status"`
-	Author   Author `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,update,query;sync:update"`
-	Tags     []Tag  `db:"-" sqlr:"many2many:post_tags;parentKey:post_id;relatedKey:tag_id" sqlh:"preload:create,update;sync:create,update,delete"`
+	AuthorId *int64         `db:"author_id"`
+	Title    sql.NullString `db:"title" sqlh:"field:headline"`
+	Status   string         `db:"status"`
+	Author   Author         `db:"-" sqlr:"belongsTo:author_id" sqlh:"preload:read,update,query;sync:update"`
+	Tags     []Tag          `db:"-" sqlr:"many2many:post_tags;parentKey:post_id;relatedKey:tag_id" sqlh:"preload:create,update;sync:create,update,delete"`
 }
 
 func (MutationPreloadPost) TableName() string {
@@ -187,7 +188,7 @@ func (t *MutationPreloadPostTransformer) TransformCreateInput(_ context.Context,
 
 	return &MutationPreloadPost{
 		AuthorId: &authorId,
-		Title:    input.Title,
+		Title:    sql.NullString{String: input.Title, Valid: true},
 		Status:   input.Status,
 		Tags:     mutationPreloadInputTagsToTags(input.Tags),
 	}, nil
@@ -202,7 +203,7 @@ func (t *MutationPreloadPostTransformer) TransformUpdateInput(_ context.Context,
 			Name:   input.Author.Name,
 		}
 	}
-	post.Title = input.Title
+	post.Title = sql.NullString{String: input.Title, Valid: true}
 	post.Status = input.Status
 	post.Tags = mutationPreloadInputTagsToTags(input.Tags)
 
@@ -223,7 +224,7 @@ func (t *MutationPreloadPostTransformer) TransformPatchInputFromEntity(_ context
 	return &MutationPreloadPostUpdateInput{
 		InputById: sqlh.InputById[int64]{Id: post.Id},
 		AuthorId:  post.AuthorId,
-		Title:     post.Title,
+		Title:     post.Title.String,
 		Status:    post.Status,
 		Author:    author,
 		Tags:      tags,
@@ -242,7 +243,7 @@ func (t *MutationPreloadPostTransformer) TransformOutput(_ context.Context, post
 	return MutationPreloadPostOutput{
 		Id:        post.Id,
 		AuthorId:  post.AuthorId,
-		Title:     post.Title,
+		Title:     post.Title.String,
 		Status:    post.Status,
 		Tags:      tags,
 		CreatedAt: post.CreatedAt,

@@ -177,6 +177,38 @@ func (s *CrudIntegrationTestSuite) TestQueryPublicRelationFilterAndCount(app sui
 	return nil
 }
 
+func (s *CrudIntegrationTestSuite) TestQueryNullableValueAliasFiltersOrdersAndCounts(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	var output sqlh.ListOutput[MutationPreloadPostOutput]
+	response, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(`{"filter":{"type":"like","field":"HEADLINE","value":"%Go%"},"orderBy":[{"field":"HeAdLiNe","direction":"desc"}],"page":{"limit":1,"offset":1}}`).
+		SetResult(&output).
+		Execute(http.MethodPost, "/v1/preload-posts")
+	if err != nil {
+		return err
+	}
+
+	s.Equal(http.StatusOK, response.StatusCode())
+	s.Equal(2, output.Total)
+	if s.Len(output.Results, 1) {
+		s.Equal(int64(2), output.Results[0].Id)
+		s.Equal(titleAdvancedGo, output.Results[0].Title)
+	}
+	response, err = client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(`{"orderBy":[{"field":"Title"}]}`).
+		Execute(http.MethodPost, "/v1/preload-posts")
+	if err != nil {
+		return err
+	}
+	s.Equal(http.StatusBadRequest, response.StatusCode())
+
+	return nil
+}
+
 func (s *CrudIntegrationTestSuite) TestQueryPostRejectsInvalidOrdering(app suite.AppUnderTest, client *resty.Client) error {
 	defer app.WaitDone()
 	defer app.Stop()

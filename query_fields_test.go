@@ -159,3 +159,43 @@ func TestPublicQueryFieldsAcceptPublicAliasesWithoutSQLFallback(t *testing.T) {
 		})
 	}
 }
+
+type queryValueRelationEntity struct {
+	sqlr.Entity[int]
+	ValueId int                `db:"value_id"`
+	Value   queryValueEntity   `db:"-" sqlr:"belongsTo:value_id"`
+	Values  []queryValueEntity `db:"-" sqlr:"foreignKey:owner_id"`
+}
+
+func TestExplicitToOneMappingsSupportPersistedValueObjects(t *testing.T) {
+	schema, err := sqlr.ParseSchema[queryValueRelationEntity]()
+	require.NoError(t, err)
+	for _, test := range []struct {
+		path   string
+		column string
+	}{
+		{"Value.Label", "label"},
+		{"Value.At", "happened_at"},
+		{"Value.Token", "token"},
+		{"Value.Amount", "amount"},
+	} {
+		resolver, err := newQueryFieldResolver(reflect.TypeFor[queryValueRelationEntity](), schema, map[string]string{"chosen": test.path})
+		require.NoError(t, err, test.path)
+		resolved, err := resolver.resolve(JsonFilter{Type: "eq", Field: "CHOSEN", Value: "value"}, []JsonOrder{{Field: "chosen"}})
+		require.NoError(t, err)
+		require.Equal(t, []string{"Value"}, resolved.filterJoins)
+		require.Empty(t, resolved.orderJoins)
+		qb := sqlr.NewQueryBuilderSelect()
+		require.NoError(t, resolved.applyFilters(qb))
+		resolved.applyOrder(qb)
+		query, args, err := qb.ToSql()
+		require.NoError(t, err)
+		require.Contains(t, query, "`Value`.`"+test.column+"` = ?")
+		require.Contains(t, query, "ORDER BY `Value`.`"+test.column+"` ASC")
+		require.Equal(t, []any{"value"}, args)
+	}
+	for _, path := range []string{"Value", "Values.Label", "Value.Label.String", "Value.Transient", "Value.Labels", "Value.App.Name"} {
+		_, err := newQueryFieldResolver(reflect.TypeFor[queryValueRelationEntity](), schema, map[string]string{"chosen": path})
+		require.Error(t, err, path)
+	}
+}

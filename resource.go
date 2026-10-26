@@ -44,7 +44,7 @@ func newResource[K sqlr.KeyTypes, E sqlr.Entitier[K]](
 		return nil, fmt.Errorf("entity schema with primary key is required")
 	}
 
-	tags, err := parseEntityBuilderTags[E]()
+	tags, err := parseEntityBuilderTags[E](schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse entity %T %s tags: %w", *new(E), sqlhTagName, err)
 	}

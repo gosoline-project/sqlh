@@ -30,7 +30,7 @@ type sqlhTagDirective struct {
 	value  string
 }
 
-func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
+func parseEntityBuilderTags[E any](schema *sqlr.EntitySchema) (*entityBuilderTags, error) {
 	var zero E
 	t := reflect.TypeOf(zero)
 	if t == nil {
@@ -45,14 +45,9 @@ func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
 		return nil, fmt.Errorf("entity type %T is not a struct", zero)
 	}
 
-	schema, err := sqlr.ParseSchemaType(t)
-	if err != nil {
-		return nil, err
-	}
-
 	tags := &entityBuilderTags{}
 	visitedTypes := map[reflect.Type]struct{}{t: {}}
-	if err := collectEntityBuilderTags(t, schema, nil, tags, visitedTypes); err != nil {
+	if err := collectEntityBuilderTags(t, schema, nil, nil, tags, visitedTypes); err != nil {
 		return nil, err
 	}
 
@@ -67,9 +62,15 @@ func parseEntityBuilderTags[E any]() (*entityBuilderTags, error) {
 	return tags, nil
 }
 
-func collectEntityBuilderTags(t reflect.Type, schema *sqlr.EntitySchema, parentPath []string, tags *entityBuilderTags, visitedTypes map[reflect.Type]struct{}) error {
+func collectEntityBuilderTags(t reflect.Type, schema *sqlr.EntitySchema, parentPath []string, parentIndex []int, tags *entityBuilderTags, visitedTypes map[reflect.Type]struct{}) error {
 	for i := range t.NumField() {
-		if err := collectEntityBuilderTagField(t.Field(i), schema, parentPath, tags, visitedTypes); err != nil {
+		field := t.Field(i)
+		if len(parentIndex) > 0 {
+			field.Index = make([]int, len(parentIndex)+1)
+			copy(field.Index, parentIndex)
+			field.Index[len(parentIndex)] = i
+		}
+		if err := collectEntityBuilderTagField(field, schema, parentPath, tags, visitedTypes); err != nil {
 			return err
 		}
 	}
@@ -92,18 +93,13 @@ func collectEntityBuilderTagField(field reflect.StructField, schema *sqlr.Entity
 	}
 	for _, directive := range directives {
 		if directive.name == sqlhFieldDirective {
-			if !field.IsExported() || !queryScalar(field.Type) {
-				return fmt.Errorf("field %s: sqlh field directive requires an exported scalar field", relationPath)
+			if _, mapped := queryColumnAtIndex(schema, field.Index, field.Type); !field.IsExported() || !mapped {
+				return fmt.Errorf("field %s: sqlh field directive requires an exported mapped scalar field", relationPath)
 			}
 
 			continue
 		}
-		// A promoted association with the same name may remain in SQLR's
-		// metadata even when this physical field is a shadowing scalar.
-		if queryScalar(field.Type) {
-			return fmt.Errorf("field %s: %s tag requires an association field", relationPath, sqlhTagName)
-		}
-		if err := validateRelationTagUsage(schema, field.Name, relationPath, tagValue); err != nil {
+		if err := validateRelationTagUsage(schema, field, relationPath, tagValue); err != nil {
 			return err
 		}
 		for _, phase := range directive.phases {
@@ -113,11 +109,7 @@ func collectEntityBuilderTagField(field reflect.StructField, schema *sqlr.Entity
 		}
 	}
 
-	if queryScalar(field.Type) {
-		return nil
-	}
-
-	return collectRelatedEntityBuilderTags(schema, field.Name, fieldPath, relationPath, tags, visitedTypes)
+	return collectRelatedEntityBuilderTags(schema, field, fieldPath, relationPath, tags, visitedTypes)
 }
 
 func collectEmbeddedEntityBuilderTags(field reflect.StructField, schema *sqlr.EntitySchema, parentPath []string, fieldPath []string, tags *entityBuilderTags, visitedTypes map[reflect.Type]struct{}, tagValue string) error {
@@ -131,25 +123,25 @@ func collectEmbeddedEntityBuilderTags(field reflect.StructField, schema *sqlr.En
 	}
 
 	return visitEntityBuilderType(visitedTypes, fieldType, func() error {
-		return collectEntityBuilderTags(fieldType, schema, parentPath, tags, visitedTypes)
+		return collectEntityBuilderTags(fieldType, schema, parentPath, field.Index, tags, visitedTypes)
 	})
 }
 
-func validateRelationTagUsage(schema *sqlr.EntitySchema, fieldName string, relationPath string, tagValue string) error {
+func validateRelationTagUsage(schema *sqlr.EntitySchema, field reflect.StructField, relationPath string, tagValue string) error {
 	if tagValue == "" {
 		return nil
 	}
 
-	if _, ok := schema.Relationships[fieldName]; ok {
+	if relation, ok := schema.Relationships[field.Name]; ok && slices.Equal(relation.FieldIndex, field.Index) {
 		return nil
 	}
 
 	return fmt.Errorf("field %s: %s tag requires an association field", relationPath, sqlhTagName)
 }
 
-func collectRelatedEntityBuilderTags(schema *sqlr.EntitySchema, fieldName string, fieldPath []string, relationPath string, tags *entityBuilderTags, visitedTypes map[reflect.Type]struct{}) error {
-	rel, ok := schema.Relationships[fieldName]
-	if !ok {
+func collectRelatedEntityBuilderTags(schema *sqlr.EntitySchema, field reflect.StructField, fieldPath []string, relationPath string, tags *entityBuilderTags, visitedTypes map[reflect.Type]struct{}) error {
+	rel, ok := schema.Relationships[field.Name]
+	if !ok || !slices.Equal(rel.FieldIndex, field.Index) {
 		return nil
 	}
 
@@ -159,7 +151,7 @@ func collectRelatedEntityBuilderTags(schema *sqlr.EntitySchema, fieldName string
 	}
 
 	return visitEntityBuilderType(visitedTypes, rel.RelatedType, func() error {
-		return collectEntityBuilderTags(rel.RelatedType, relSchema, fieldPath, tags, visitedTypes)
+		return collectEntityBuilderTags(rel.RelatedType, relSchema, fieldPath, nil, tags, visitedTypes)
 	})
 }
 
