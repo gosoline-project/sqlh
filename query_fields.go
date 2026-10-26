@@ -1,13 +1,14 @@
 package sqlh
 
 import (
+	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"maps"
 	"reflect"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/gosoline-project/sqlc"
@@ -62,10 +63,10 @@ func newAutomaticQueryFieldResolver(entity reflect.Type, schema *sqlr.EntitySche
 	// Go visibility is resolved before aliases: hidden and ambiguous promoted
 	// names do not participate, but aliases never silently shadow another field.
 	for _, member := range reflect.VisibleFields(entity) {
-		if !member.IsExported() || !queryScalar(member.Type) {
+		if !member.IsExported() {
 			continue
 		}
-		column, ok := queryColumnAtIndex(schema, member.Index)
+		column, ok := queryColumnAtIndex(schema, member.Index, member.Type)
 		if !ok {
 			continue
 		}
@@ -88,11 +89,28 @@ func newAutomaticQueryFieldResolver(entity reflect.Type, schema *sqlr.EntitySche
 	return resolver, nil
 }
 
-func queryColumnAtIndex(schema *sqlr.EntitySchema, index []int) (string, bool) {
+// SQLR's exact physical column index, not a value object's Go representation,
+// determines persistence. Collections need database value semantics of their own.
+func queryColumnAtIndex(schema *sqlr.EntitySchema, index []int, t reflect.Type) (string, bool) {
 	for _, column := range schema.Columns {
-		if slices.Equal(index, column.FieldIndex) {
-			return column.Name, true
+		if !slices.Equal(index, column.FieldIndex) {
+			continue
 		}
+		t = indirectQueryType(t)
+		switch t.Kind() {
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.UnsafePointer, reflect.Complex64, reflect.Complex128:
+			return "", false
+		case reflect.Array, reflect.Slice, reflect.Map:
+			if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
+				return column.Name, true
+			}
+			if !t.Implements(reflect.TypeFor[driver.Valuer]()) && !reflect.PointerTo(t).Implements(reflect.TypeFor[driver.Valuer]()) &&
+				!t.Implements(reflect.TypeFor[sql.Scanner]()) && !reflect.PointerTo(t).Implements(reflect.TypeFor[sql.Scanner]()) {
+				return "", false
+			}
+		}
+
+		return column.Name, true
 	}
 
 	return "", false
@@ -176,19 +194,6 @@ func indirectQueryType(t reflect.Type) reflect.Type {
 	return t
 }
 
-func queryScalar(t reflect.Type) bool {
-	t = indirectQueryType(t)
-	switch t.Kind() {
-	case reflect.Bool, reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Float32, reflect.Float64:
-		return true
-	case reflect.Struct:
-		return t.ConvertibleTo(reflect.TypeFor[time.Time]())
-	default:
-		return false
-	}
-}
-
 func queryMappedField(qualifier, column, relation string) (queryField, error) {
 	if !queryIdentifier.MatchString(qualifier) || !queryIdentifier.MatchString(column) {
 		return queryField{}, fmt.Errorf("unsupported query database identifier %q.%q", qualifier, column)
@@ -241,13 +246,8 @@ func resolveQueryMappedScalar(entity reflect.Type, schema *sqlr.EntitySchema, pa
 	if err != nil {
 		return queryField{}, err
 	}
-	if !queryScalar(fieldType) {
-		return queryField{}, fmt.Errorf("field %q is not a scalar", path)
-	}
-	for _, column := range schema.Columns {
-		if slices.Equal(column.FieldIndex, index) {
-			return queryMappedField(qualifier, column.Name, relation)
-		}
+	if column, ok := queryColumnAtIndex(schema, index, fieldType); ok {
+		return queryMappedField(qualifier, column, relation)
 	}
 
 	return queryField{}, fmt.Errorf("field %q is not a mapped scalar", path)

@@ -1,11 +1,14 @@
 package sqlh
 
 import (
+	"database/sql"
+	"database/sql/driver"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gosoline-project/sqlr"
 	sqlrmocks "github.com/gosoline-project/sqlr/mocks"
 	"github.com/stretchr/testify/require"
@@ -229,4 +232,102 @@ func TestScalarFieldTagsOnShadowedAssociationConstructResources(t *testing.T) {
 	require.NoError(t, err)
 	_, err = explicitResource.queryFields.resolve(JsonFilter{Type: "eq", Field: "SELECTED", Value: "label"}, nil)
 	require.NoError(t, err)
+}
+
+type queryDecimalValue struct {
+	amount string
+}
+
+func (v queryDecimalValue) Value() (driver.Value, error) {
+	return v.amount, nil
+}
+
+type QueryValueFields struct {
+	Label   sql.NullString    `db:"label" sqlh:"field:display-name"`
+	At      sql.NullTime      `db:"happened_at" sqlh:"field:occurred-at"`
+	Token   uuid.UUID         `db:"token" sqlh:"field:identifier"`
+	Amount  queryDecimalValue `db:"amount" sqlh:"field:-"`
+	Payload []byte            `db:"payload"`
+}
+
+type queryValueEntity struct {
+	sqlr.Entity[int]
+	QueryValueFields
+	Default        sql.NullString
+	Transient      sql.NullTime     `db:"-"`
+	TransientToken uuid.UUID        `db:"-"`
+	Labels         []string         `db:"labels"`
+	Lookup         map[string]int   `db:"lookup"`
+	Tuple          [2]string        `db:"tuple"`
+	AppId          int              `db:"app_id"`
+	App            queryContractApp `db:"-" sqlr:"belongsTo:app_id"`
+}
+
+func TestMappedValueObjectsSupportAutomaticAndExplicitQueryFields(t *testing.T) {
+	schema, err := sqlr.ParseSchema[queryValueEntity]()
+	require.NoError(t, err)
+	tags, err := parseEntityBuilderTags[queryValueEntity](schema)
+	require.NoError(t, err)
+	require.Empty(t, tags.readPreloadPaths)
+	require.Empty(t, tags.queryPreloadPaths)
+	for _, test := range []struct {
+		name       string
+		configured map[string]string
+		columns    map[string]string
+	}{
+		{
+			name: "automatic",
+			columns: map[string]string{
+				"DISPLAY-NAME": "label", "OCCURRED-AT": "happened_at", "IDENTIFIER": "token", "DEFAULT": "default", "PAYLOAD": "payload",
+			},
+		},
+		{
+			name: "explicit overrides aliases and exclusions",
+			configured: map[string]string{
+				"selectedLabel": "Label", "selectedTime": "QueryValueFields.At", "selectedToken": "Token",
+				"selectedAmount": "Amount", "selectedPayload": "Payload",
+			},
+			columns: map[string]string{
+				"SELECTEDLABEL": "label", "SELECTEDTIME": "happened_at", "SELECTEDTOKEN": "token",
+				"SELECTEDAMOUNT": "amount", "SELECTEDPAYLOAD": "payload",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resolver, err := newQueryFieldResolver(reflect.TypeFor[queryValueEntity](), schema, test.configured)
+			require.NoError(t, err)
+			for public, column := range test.columns {
+				resolved, err := resolver.resolve(JsonFilter{Type: "eq", Field: public, Value: "value"}, []JsonOrder{{Field: public, Direction: "desc"}})
+				require.NoError(t, err, public)
+				qb := sqlr.NewQueryBuilderSelect()
+				require.NoError(t, resolved.applyFilters(qb))
+				resolved.applyOrder(qb)
+				query, args, err := qb.ToSql()
+				require.NoError(t, err)
+				qualified := "`" + schema.TableName + "`.`" + column + "`"
+				require.Equal(t, "WHERE "+qualified+" = ? ORDER BY "+qualified+" DESC", query)
+				require.Equal(t, []any{"value"}, args)
+				require.Empty(t, resolved.filterJoins)
+			}
+			for _, public := range []string{"Label", "At", "Token", "Amount", "Transient", "TransientToken", "Labels", "Lookup", "Tuple", "App"} {
+				_, err := resolver.resolve(JsonFilter{Type: "eq", Field: public, Value: "value"}, nil)
+				require.Error(t, err, public)
+				_, err = resolver.resolve(JsonFilter{}, []JsonOrder{{Field: public}})
+				require.Error(t, err, public)
+			}
+			if test.configured != nil {
+				_, err := resolver.resolve(JsonFilter{}, []JsonOrder{{Field: "display-name"}})
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestExplicitValueObjectMappingsRejectNoncolumnsAndCollections(t *testing.T) {
+	schema, err := sqlr.ParseSchema[queryValueEntity]()
+	require.NoError(t, err)
+	for _, path := range []string{"Transient", "TransientToken", "Label.String", "Token.Missing", "Labels", "Lookup", "Tuple", "App", "AppId.Missing"} {
+		_, err := newQueryFieldResolver(reflect.TypeFor[queryValueEntity](), schema, map[string]string{"chosen": path})
+		require.Error(t, err, path)
+	}
 }

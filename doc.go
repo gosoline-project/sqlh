@@ -64,16 +64,21 @@
 // CrudDefinition.FieldMappings maps public names to entity Go field paths. A
 // non-nil map is the complete allowlist, not an addition to automatic fields;
 // an empty map exposes no public query fields. A nil map discovers visible
-// exported Go scalar fields backed by SQLR database metadata, ignoring binding
-// tags such as json. The scalar tag sqlh:"field:alias" supplies an automatic
-// public name; sqlh:"field:-" excludes automatic exposure. Explicit mappings
-// override both defaults. Go embedding shadowing and ambiguity apply before
+// exported Go value fields backed by exact SQLR column metadata, including
+// nullable wrappers and UUID/decimal value objects, ignoring binding tags such
+// as json. The tag sqlh:"field:alias" supplies an automatic public name;
+// sqlh:"field:-" excludes automatic exposure. Explicit mappings override both
+// defaults. Go embedding shadowing and ambiguity apply before
 // aliases. Public lookup uses Unicode case-insensitive simple folding, without
 // punctuation or naming-style normalization; active name collisions fail at
-// construction. Computed fields and relation collections are not automatically
-// exposed. Explicit paths may traverse one direct to-one relation, but not
-// collections or multi-hop relations. SQLH resolves database identifiers itself
-// and qualifies base columns with the entity table.
+// construction. Unmapped fields and associations are not automatic query
+// fields. Collection-shaped columns require sql.Scanner or driver.Valuer value
+// semantics, except byte slices; ordinary collections remain excluded.
+// Explicit paths may traverse one direct to-one relation, but not collections
+// or multi-hop relations. Invalid explicit targets and field tags on unexported,
+// unmapped, or ordinary collection fields fail construction; automatic discovery
+// simply skips ineligible untagged fields. SQLH resolves database identifiers
+// itself and qualifies base columns with the entity table.
 //
 // Custom list inputs implement [ListInputSource], including GetFilter and
 // GetOrderBy. Public fields, operators, ordering, pagination, and
