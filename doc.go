@@ -1,6 +1,18 @@
 // Package sqlh provides typed, transaction-aware CRUD operations for SQLR
 // entities and HTTP servers.
 //
+// # Requirements
+//
+// SQLH requires Go 1.27.3 or newer, including when used as a dependency.
+// Its dependency versions include compatible fixes for HTTP, telemetry,
+// configuration, compression, AWS SDK, and local integration-test tooling.
+// The selected legacy PostgreSQL driver and Avro decoder still have upstream
+// security advisories without compatible fixes; this is not a vulnerability-free
+// dependency baseline.
+// The SQLR revision inherited from main supplies query-field metadata and generic
+// default joins; security reconciliation does not replace it with a sibling
+// security branch or change public filtering, ordering, or persisted-field rules.
+//
 // # Operations and transactions
 //
 // Public SQLH operations use the same shape as httpserver handlers and
