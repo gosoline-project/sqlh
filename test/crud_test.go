@@ -46,6 +46,8 @@ func (s *CrudIntegrationTestSuite) SetupHttpServerRouter() gosolinehttpserver.Ro
 	return func(ctx context.Context, config cfg.Config, logger log.Logger, router *gosolinehttpserver.Router) error {
 		router.HandleWith(NewPostCrud())
 		router.HandleWith(NewMutationPreloadPostCrud())
+		router.HandleWith(newPostCrud[joinedPostListInput]("joined-post"))
+		router.HandleWith(newPostCrud[modifiedPostListInput]("modified-post"))
 
 		return nil
 	}
@@ -172,6 +174,70 @@ func (s *CrudIntegrationTestSuite) TestQueryPublicRelationFilterAndCount(app sui
 	if s.Len(output.Results, 1) {
 		s.Equal(int64(2), output.Results[0].Id)
 		s.Equal("Advanced Go Patterns", output.Results[0].Title)
+	}
+
+	return nil
+}
+
+func (s *CrudIntegrationTestSuite) TestQueryTrustedJoinsComposeWithPublicRelations(app suite.AppUnderTest, client *resty.Client) error {
+	defer app.WaitDone()
+	defer app.Stop()
+
+	// Both trusted hooks restrict rows to Alice through INNER JOIN ... ON.
+	// The broad public filter needs its relation in count too, while row-only
+	// modifiers must leave count at all three posts.
+	for _, test := range []struct {
+		name  string
+		path  string
+		body  string
+		total int
+	}{
+		{
+			name:  "scope join with relation filter",
+			path:  "/v1/joined-posts",
+			body:  `{"filter":{"type":"like","field":"author.name","value":"%"},"orderBy":[{"field":"id","direction":"desc"}],"page":{"limit":1,"offset":1}}`,
+			total: 2,
+		},
+		{
+			name:  "scope join with relation order",
+			path:  "/v1/joined-posts",
+			body:  `{"orderBy":[{"field":"id","direction":"desc"},{"field":"author.name"}],"page":{"limit":1,"offset":1}}`,
+			total: 2,
+		},
+		{
+			name:  "row modifier join with relation filter",
+			path:  "/v1/modified-posts",
+			body:  `{"filter":{"type":"like","field":"author.name","value":"%"},"orderBy":[{"field":"id","direction":"desc"}],"page":{"limit":1,"offset":1}}`,
+			total: 3,
+		},
+		{
+			name:  "row modifier join with relation order",
+			path:  "/v1/modified-posts",
+			body:  `{"orderBy":[{"field":"id","direction":"desc"},{"field":"author.name"}],"page":{"limit":1,"offset":1}}`,
+			total: 3,
+		},
+	} {
+		var output sqlh.ListOutput[PostOutput]
+		response, err := client.R().
+			SetHeader("Content-Type", "application/json").
+			SetBody(test.body).
+			SetResult(&output).
+			Execute(http.MethodPost, test.path)
+		if err != nil {
+			return err
+		}
+
+		s.Equal(http.StatusOK, response.StatusCode(), test.name)
+		s.Equal(sqlh.ListOutput[PostOutput]{
+			Total: test.total,
+			Results: []PostOutput{{
+				Id: 1, AuthorId: int64Ptr(1), Title: "Getting Started with Go", Status: "published",
+				Author:    &AuthorOutput{Id: 1, Name: "Alice Johnson"},
+				Tags:      []TagOutput{{Id: 1, Name: "golang"}, {Id: 4, Name: "tutorial"}},
+				CreatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+				UpdatedAt: time.Date(2024, 1, 5, 10, 0, 0, 0, time.UTC),
+			}},
+		}, output, test.name)
 	}
 
 	return nil

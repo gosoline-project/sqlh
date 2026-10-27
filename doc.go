@@ -89,6 +89,10 @@
 // Optional custom ApplyFilters and ApplyQueryModifiers methods are trusted
 // server-side extensions, not public field resolution hooks. ApplyFilters adds
 // shared restrictions; ApplyQueryModifiers adds row-only grouping or ordering.
+// Automatic relation filters and ordering request default LEFT joins. A trusted
+// explicit LeftJoin or InnerJoin for the same relation takes precedence,
+// regardless of call order, preserving its join type and ON conditions.
+// Filter-required joins apply to rows and count; order-only joins apply to rows.
 // Neither method is provided by ListInput. Never pass unvalidated request
 // identifiers or SQL expressions through these extensions. If row modifiers
 // change cardinality, provide a matching custom Count callback.
