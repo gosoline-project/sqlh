@@ -9,6 +9,9 @@
 // The selected legacy PostgreSQL driver and Avro decoder still have upstream
 // security advisories without compatible fixes; this is not a vulnerability-free
 // dependency baseline.
+// The SQLR revision inherited from main supplies query-field metadata and generic
+// default joins; security reconciliation does not replace it with a sibling
+// security branch or change public filtering, ordering, or persisted-field rules.
 //
 // # Operations and transactions
 //
@@ -61,18 +64,50 @@
 // list, count, identity, update, and delete lookups. A force filter must only
 // add restrictive WHERE conditions.
 //
-// [ListInput] provides filters, native orderBy keys, nested pagination, and force filters. [ListOutput]
-// contains typed results and an explicit total. Default query and count paths
-// use the same user filters, force filters, and soft-delete scope. Custom list
-// inputs must implement [ListInputSource], including ApplyQueryModifiers. Use a
-// no-op implementation when the input has no row-only modifiers.
-// A positive offset requires a positive limit.
-// Ordering uses sqlc.JsonOrder for column identifiers and case-insensitive asc/desc directions,
-// defaulting to asc. Omitted ordering preserves existing query-builder ordering.
-// All list inputs must implement ValidateQueryModifiers and are validated before
-// either default or custom query/count execution. Use a no-op validator when
-// no modifiers need validation. Applications can override
-// ListInput.ValidateQueryModifiers to restrict sortable columns further.
+// [ListInput] provides public filters, orderBy keys, nested pagination, and
+// force filters. [JsonFilter] and [JsonOrder] use "field" for public query names,
+// not database columns or SQL expressions. Filter operators remain the sqlc
+// JsonFilterType constants. Ordering accepts case-insensitive asc/desc directions
+// and defaults to asc; omitted ordering preserves existing builder ordering.
+// [ListOutput] contains typed results and an explicit total. Default query and
+// count paths share user filters, force filters, and soft-delete scope. Count
+// omits row-only modifiers, ordering, and pagination.
+//
+// CrudDefinition.FieldMappings maps public names to entity Go field paths. A
+// non-nil map is the complete allowlist, not an addition to automatic fields;
+// an empty map exposes no public query fields. A nil map discovers visible
+// exported Go value fields backed by exact SQLR column metadata, including
+// nullable wrappers and UUID/decimal value objects, ignoring binding tags such
+// as json. The tag sqlh:"field:alias" supplies an automatic public name;
+// sqlh:"field:-" excludes automatic exposure. Explicit mappings override both
+// defaults. Go embedding shadowing and ambiguity apply before
+// aliases. Public lookup uses Unicode case-insensitive simple folding, without
+// punctuation or naming-style normalization; active name collisions fail at
+// construction. Unmapped fields and associations are not automatic query
+// fields. Collection-shaped columns require sql.Scanner or driver.Valuer value
+// semantics, except byte slices; ordinary collections remain excluded.
+// Explicit paths may traverse one direct to-one relation, but not collections
+// or multi-hop relations. Invalid explicit targets and field tags on unexported,
+// unmapped, or ordinary collection fields fail construction; automatic discovery
+// simply skips ineligible untagged fields. SQLH resolves database identifiers
+// itself and qualifies base columns with the entity table.
+//
+// Custom list inputs implement [ListInputSource], including GetFilter and
+// GetOrderBy. Public fields, operators, ordering, pagination, and
+// ValidateQueryModifiers are validated before default or custom query/count
+// callbacks. A positive offset requires a positive limit. Use a no-op
+// ValidateQueryModifiers when no additional modifier validation is needed.
+//
+// Optional custom ApplyFilters and ApplyQueryModifiers methods are trusted
+// server-side extensions, not public field resolution hooks. ApplyFilters adds
+// shared restrictions; ApplyQueryModifiers adds row-only grouping or ordering.
+// Automatic relation filters and ordering request default LEFT joins. A trusted
+// explicit LeftJoin or InnerJoin for the same relation takes precedence,
+// regardless of call order, preserving its join type and ON conditions.
+// Filter-required joins apply to rows and count; order-only joins apply to rows.
+// Neither method is provided by ListInput. Never pass unvalidated request
+// identifiers or SQL expressions through these extensions. If row modifiers
+// change cardinality, provide a matching custom Count callback.
 //
 // Custom Query and Count callbacks must call QueryPlan.ApplyBuilder and then
 // QueryPlan.ApplyScope. A custom Query callback must then call

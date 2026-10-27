@@ -18,7 +18,7 @@ import (
 
 type crudTestEntity struct {
 	sqlr.Entity[int]
-	Name string `db:"name"`
+	Name string `db:"name" json:"name"`
 }
 
 type crudTestCreateInput struct {
@@ -41,6 +41,14 @@ type crudTestListInput struct {
 	applyFiltersCalls     *int
 	applyFiltersErr       error
 	validatePaginationErr error
+}
+
+func (crudTestListInput) GetFilter() JsonFilter {
+	return JsonFilter{}
+}
+
+func (crudTestListInput) GetOrderBy() []JsonOrder {
+	return nil
 }
 
 func (i crudTestListInput) ApplyFilters(qb *sqlr.QueryBuilderSelect) error {
@@ -195,9 +203,49 @@ func TestCrudHandlerListInvalidOrderingRollsBackBeforeQuery(t *testing.T) {
 			}
 			handler, err := newCrudHandler(repository, runner, schema, definition)
 			require.NoError(t, err)
-			output, err := handler.List(context.Background(), &ListInput{OrderBy: []sqlc.JsonOrder{{Column: "name", Direction: "invalid"}}})
+			output, err := handler.List(context.Background(), &ListInput{OrderBy: []JsonOrder{{Field: "name", Direction: "invalid"}}})
 			require.Zero(t, output)
 			require.EqualError(t, err, "validation: orderBy[0]: direction must be asc or desc")
+		})
+	}
+}
+
+func TestCrudHandlerListRejectsPublicFieldsBeforeCallbacks(t *testing.T) {
+	for _, input := range []ListInput{
+		{Filter: JsonFilter{Type: sqlc.JsonFilterEq, Field: "missing", Value: "first"}},
+		{OrderBy: []JsonOrder{{Field: "missing"}}},
+		{OrderBy: []JsonOrder{{Field: "crud_test_entities.name"}}},
+	} {
+		t.Run(fmt.Sprintf("%+v", input), func(t *testing.T) {
+			repository := sqlrmocks.NewRepositoryTx[int, crudTestEntity](t)
+			tx := &transactionTestTx{Tx: newTestTx(t)}
+			tx.EXPECT().Rollback().Return(nil).Once()
+			runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})
+			require.NoError(t, err)
+			schema, err := sqlr.ParseSchema[crudTestEntity]()
+			require.NoError(t, err)
+			definition := newCrudTestDefinition()
+			definition.Query = func(context.Context, sqlr.TTx, sqlr.RepositoryTx[int, crudTestEntity], *ListInput, QueryPlan) ([]crudTestEntity, error) {
+				t.Fatal("invalid public input must not reach custom query")
+
+				return nil, nil
+			}
+			definition.Count = func(context.Context, sqlr.TTx, sqlr.RepositoryTx[int, crudTestEntity], *ListInput, QueryPlan) (int, error) {
+				t.Fatal("invalid public input must not reach custom count")
+
+				return 0, nil
+			}
+			definition.DeleteScope = func(*sqlr.QueryBuilderSelect) {
+				t.Fatal("invalid public input must not reach delete scope")
+			}
+			input.AddForceFilter(func(*sqlr.QueryBuilderSelect) {
+				t.Fatal("invalid public input must not reach force filter")
+			})
+			handler, err := newCrudHandler(repository, runner, schema, definition)
+			require.NoError(t, err)
+			output, err := handler.List(context.Background(), &input)
+			require.Error(t, err)
+			require.Zero(t, output)
 		})
 	}
 }
@@ -331,7 +379,7 @@ func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *test
 		}
 		require.Contains(t, query, "deleted")
 		require.Contains(t, query, "account_id")
-		require.Contains(t, query, "status")
+		require.Contains(t, query, "name")
 		require.Contains(t, query, "LIMIT 2")
 		require.Contains(t, query, "OFFSET 1")
 		require.Equal(t, []any{false, 42, "active"}, arguments)
@@ -345,9 +393,10 @@ func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *test
 		}
 		require.Contains(t, query, "deleted")
 		require.Contains(t, query, "account_id")
-		require.Contains(t, query, "status")
+		require.Contains(t, query, "name")
 		require.NotContains(t, query, "LIMIT")
 		require.NotContains(t, query, "OFFSET")
+		require.NotContains(t, query, "ORDER BY")
 		require.Equal(t, []any{false, 42, "active"}, arguments)
 
 		return 3, nil
@@ -366,7 +415,7 @@ func TestCrudHandlerListAppliesScopesAndPaginationToDefaultQueryAndCount(t *test
 	require.NoError(t, err)
 
 	input := ListInput{
-		Filter: sqlc.JsonFilter{Type: "eq", Column: "status", Value: "active"},
+		Filter: JsonFilter{Type: sqlc.JsonFilterEq, Field: "name", Value: "active"},
 		Page:   ListPage{Limit: 2, Offset: 1},
 	}
 	input.AddForceFilter(func(qb *sqlr.QueryBuilderSelect) {
@@ -386,14 +435,18 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 	tx := &transactionTestTx{Tx: newTestTx(t)}
 	tx.EXPECT().Commit().Return(nil).Once()
 
-	assertScope := func(qb *sqlr.QueryBuilderSelect) error {
+	assertScope := func(qb *sqlr.QueryBuilderSelect, rowQuery bool) error {
 		query, arguments, err := qb.ToSql()
 		if err != nil {
 			return err
 		}
 		require.Contains(t, query, "account_id")
 		require.Contains(t, query, "domain")
-		require.Contains(t, query, "ORDER BY `name`")
+		if rowQuery {
+			require.Contains(t, query, "ORDER BY `name`")
+		} else {
+			require.NotContains(t, query, "ORDER BY")
+		}
 		require.Equal(t, []any{7, "allowed"}, arguments)
 
 		return nil
@@ -404,10 +457,10 @@ func TestCrudHandlerListAppliesForceFiltersToCustomInputOncePerScope(t *testing.
 			option(qb)
 		}
 
-		return nil, assertScope(qb)
+		return nil, assertScope(qb, true)
 	}).Once()
 	repository.EXPECT().Count(mock.Anything, mock.Anything).RunAndReturn(func(_ sqlr.TTx, qb *sqlr.QueryBuilderSelect) (int, error) {
-		return 0, assertScope(qb)
+		return 0, assertScope(qb, false)
 	}).Once()
 
 	runner, err := NewTxRunnerWithClient(transactionTestClient{tx: tx})

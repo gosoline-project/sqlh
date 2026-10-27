@@ -5,9 +5,10 @@ go 1.27.3
 require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
+	github.com/google/uuid v1.6.0
 	github.com/gosoline-project/httpserver v0.6.4
 	github.com/gosoline-project/sqlc v0.4.1
-	github.com/gosoline-project/sqlr v0.9.1
+	github.com/gosoline-project/sqlr v0.9.2-0.20261027132740-484c58e94d7b
 	github.com/jinzhu/inflection v1.0.0
 	github.com/justtrackio/gosoline v0.63.5
 	github.com/stretchr/testify v1.11.1
@@ -96,7 +97,6 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hamba/avro/v2 v2.29.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
