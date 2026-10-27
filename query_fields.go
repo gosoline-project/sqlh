@@ -350,7 +350,7 @@ func appendUniqueQueryJoin(joins []string, relation string) []string {
 
 func (q *resolvedQuery) applyFilters(qb *sqlr.QueryBuilderSelect) error {
 	for _, relation := range q.filterJoins {
-		qb.DefaultLeftJoin(relation)
+		qb.DefaultJoin(sqlc.JoinLeft, relation)
 	}
 	if q.filter != nil {
 		qb.Where(q.filter)
@@ -361,7 +361,7 @@ func (q *resolvedQuery) applyFilters(qb *sqlr.QueryBuilderSelect) error {
 
 func (q *resolvedQuery) applyOrder(qb *sqlr.QueryBuilderSelect) {
 	for _, relation := range q.orderJoins {
-		qb.DefaultLeftJoin(relation)
+		qb.DefaultJoin(sqlc.JoinLeft, relation)
 	}
 	if len(q.order) > 0 {
 		qb.OrderBy(q.order...)
