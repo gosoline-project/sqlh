@@ -6,7 +6,7 @@ require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/google/uuid v1.6.0
-	github.com/gosoline-project/httpserver v0.6.5-0.20261026100922-13fdf9916b14
+	github.com/gosoline-project/httpserver v0.6.5
 	github.com/gosoline-project/sqlc v0.4.2-0.20261022101232-4e97a8c5efc7
 	github.com/gosoline-project/sqlr v0.9.2-0.20261027132740-484c58e94d7b
 	github.com/jinzhu/inflection v1.0.0
@@ -88,7 +88,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -159,7 +159,7 @@ require (
 	github.com/sethvargo/go-retry v0.2.4 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twmb/franz-go v1.20.3 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.16.1 // indirect
