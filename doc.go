@@ -9,6 +9,9 @@
 // The selected legacy PostgreSQL driver and Avro decoder still have upstream
 // security advisories without compatible fixes; this is not a vulnerability-free
 // dependency baseline.
+// The SQLR revision inherited from main supplies query-field metadata and generic
+// default joins; security reconciliation does not replace it with a sibling
+// security branch or change public filtering, ordering, or persisted-field rules.
 //
 // # Operations and transactions
 //
