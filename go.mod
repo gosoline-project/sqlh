@@ -10,7 +10,7 @@ require (
 	github.com/gosoline-project/sqlc v0.5.0
 	github.com/gosoline-project/sqlr v0.9.2-0.20261027132740-484c58e94d7b
 	github.com/jinzhu/inflection v1.0.0
-	github.com/justtrackio/gosoline v0.69.3-0.20261116141014-1bc0b85bed4e
+	github.com/justtrackio/gosoline v0.69.3-0.20261116142819-dd575e2276c4
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -173,8 +173,8 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.21.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.44.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0 // indirect
