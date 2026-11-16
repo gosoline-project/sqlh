@@ -19,8 +19,8 @@ Primary responsibilities:
 
 ## Toolchain
 Tool versions are pinned in `mise.toml`:
-- Go 1.27.3 (also the minimum supported Go version);
-- golangci-lint 2.14.0 (supports the Go 1.27.3 export-data format).
+- Go 1.27.4 (also the minimum supported Go version);
+- golangci-lint 2.14.0.
 
 ## Canonical commands
 Run commands from the repository root.
