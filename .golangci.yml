@@ -47,6 +47,7 @@ linters:
     - staticcheck # It's a set of rules from staticcheck.
     - unused # Checks Go code for unused constants, variables, functions and types.
     - usetesting # Use the testing package instead of the deprecated test package, replacement for tenv
+    - justtrack
     - whitespace # Whitespace is a linter that checks for unnecessary newlines at the start and end of functions, if, for, etc.
 
   exclusions:
@@ -99,6 +100,11 @@ linters:
       rules:
         - name: use-any
 
+    custom:
+      justtrack:
+        type: module
+        description: runs the justtrack company rules
+        original-url: github.com/justtrackio/go-linters
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
