@@ -10,7 +10,7 @@ require (
 	github.com/gosoline-project/sqlc v0.5.0
 	github.com/gosoline-project/sqlr v0.9.2-0.20261027132740-484c58e94d7b
 	github.com/jinzhu/inflection v1.0.0
-	github.com/justtrackio/gosoline v0.69.4-0.20261119142210-6b853365bb4a
+	github.com/justtrackio/gosoline v0.69.4-0.20261119145002-5d9b5abd62e7
 	github.com/stretchr/testify v1.12.1
 )
 
