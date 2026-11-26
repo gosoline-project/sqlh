@@ -6,11 +6,11 @@ require (
 	github.com/evanphx/json-patch v0.5.2
 	github.com/go-resty/resty/v2 v2.7.1-0.20230308051516-1578007c3c8d
 	github.com/google/uuid v1.6.0
-	github.com/gosoline-project/httpserver v0.6.6
-	github.com/gosoline-project/sqlc v0.5.0
-	github.com/gosoline-project/sqlr v0.9.2-0.20261027132740-484c58e94d7b
+	github.com/gosoline-project/httpserver v0.6.9-0.20261126111541-f0cbce27a933
+	github.com/gosoline-project/sqlc v0.5.1-0.20261126111541-d13d4ec2626e
+	github.com/gosoline-project/sqlr v0.10.1-0.20261126111713-cfb9936280de
 	github.com/jinzhu/inflection v1.0.0
-	github.com/justtrackio/gosoline v0.69.0
+	github.com/justtrackio/gosoline v0.69.6-0.20261126111349-167371af9677
 	github.com/stretchr/testify v1.11.1
 )
 
